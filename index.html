@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBT0JsxTe0xL_mEVk-tXA_QcMKlPktu7FE",
@@ -27,7 +27,7 @@ const db = getFirestore(app);
 
 // Expose db and firebase functions globally
 window._db = db;
-window._fbFns = { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp };
+window._fbFns = { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp };
 window._firebaseReady = true;
 window.dispatchEvent(new Event('firebase-ready'));
 </script>
@@ -329,11 +329,13 @@ function enterApp(role,name){
   document.getElementById('user-badge').className='badge '+(role==='admin'?'admin':'worker');
   openToday();renderSchedule();
   // Start Firebase sync (wait if not ready yet)
-  if(window._firebaseReady){startTaskSync();}
-  else{window.addEventListener('firebase-ready',startTaskSync,{once:true});}
+  function startAllSync(){startScheduleSync();startTaskSync();}
+  if(window._firebaseReady){startAllSync();}
+  else{window.addEventListener('firebase-ready',startAllSync,{once:true});}
 }
 function logout(){
   if(_unsubscribe){_unsubscribe();_unsubscribe=null;}
+  if(_scheduleUnsubscribe){_scheduleUnsubscribe();_scheduleUnsubscribe=null;}
   tasks={};
   currentRole=null;currentWorker=null;pinBuffer='';
   document.getElementById('login-screen').classList.remove('hidden');
@@ -411,8 +413,27 @@ let W2=[
   [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM','asics'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
 ];
 
-try{const s=localStorage.getItem('negozio_schedule');if(s){const p=JSON.parse(s);W1=p.W1;W2=p.W2;}}catch(e){}
-function saveSchedule(){try{localStorage.setItem('negozio_schedule',JSON.stringify({W1,W2}));}catch(e){}}
+// Schedule is synced via Firebase — W1/W2 are defaults until Firebase loads
+let _scheduleUnsubscribe=null;
+
+async function saveSchedule(){
+  if(!window._firebaseReady)return;
+  const {doc,setDoc}=window._fbFns;
+  await setDoc(doc(window._db,'schedule','orario'),{W1:JSON.stringify(W1),W2:JSON.stringify(W2)});
+}
+
+function startScheduleSync(){
+  if(_scheduleUnsubscribe)_scheduleUnsubscribe();
+  const {doc,onSnapshot}=window._fbFns;
+  _scheduleUnsubscribe=onSnapshot(doc(window._db,'schedule','orario'),(docSnap)=>{
+    if(docSnap.exists()){
+      const d=docSnap.data();
+      try{W1=JSON.parse(d.W1);W2=JSON.parse(d.W2);}catch(e){}
+      renderSchedule();
+      renderWorkersGrid();
+    }
+  });
+}
 
 // Helper: get cell data by global day index (0-13) and hour index
 function getCellData(globalDayIdx,hi){
