@@ -8,6 +8,29 @@
 <meta name="theme-color" content="#1a1916">
 <title>Orario Negozio — Giugno 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBT0JsxTe0xL_mEVk-tXA_QcMKlPktu7FE",
+  authDomain: "turni-kozmolaze.firebaseapp.com",
+  projectId: "turni-kozmolaze",
+  storageBucket: "turni-kozmolaze.firebasestorage.app",
+  messagingSenderId: "145329320632",
+  appId: "1:145329320632:web:c152f3c491823f5fc47a4d",
+  measurementId: "G-BDCV7E84GC"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Expose db and firebase functions globally
+window._db = db;
+window._fbFns = { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp };
+window._firebaseReady = true;
+window.dispatchEvent(new Event('firebase-ready'));
+</script>
 <style>
 :root{--bg:#f7f5f0;--surface:#fff;--border:#e2ddd5;--text:#1a1916;--text2:#6b6660;--text3:#a09890;--accent:#c17f24;--accent-light:#fdf3e3;
   --safe-top:env(safe-area-inset-top);--safe-bottom:env(safe-area-inset-bottom);--safe-left:env(safe-area-inset-left);--safe-right:env(safe-area-inset-right);}
@@ -304,9 +327,14 @@ function enterApp(role,name){
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('user-badge').textContent=name+(role==='admin'?' ✦':'');
   document.getElementById('user-badge').className='badge '+(role==='admin'?'admin':'worker');
-  openToday();renderSchedule();renderWorkersGrid();
+  openToday();renderSchedule();
+  // Start Firebase sync (wait if not ready yet)
+  if(window._firebaseReady){startTaskSync();}
+  else{window.addEventListener('firebase-ready',startTaskSync,{once:true});}
 }
 function logout(){
+  if(_unsubscribe){_unsubscribe();_unsubscribe=null;}
+  tasks={};
   currentRole=null;currentWorker=null;pinBuffer='';
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('worker-select').value='';
@@ -339,28 +367,48 @@ const WEEK2_DAYS=[
 const ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS]; // 14 giorni totali
 
 let W1=[
-  [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],[],['ALE','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],[],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['ALE','FEDE'],['RUF','ANDRE','mizuno'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF','ANDRE','SOFI','FEDE'],['ALE','FEDE'],['RUF','ANDRE','mizuno'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF','ANDRE','SOFI','FEDE'],['ALE','FEDE'],['RUF','ANDRE','ALE','saucony'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['ANDRE','ALE','MATTEO','RUF'],['RUF','ALE'],['RUF','ANDRE','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','ANDRE','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 10-11
+  [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['FEDE','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 11-12
+  [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['FEDE','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 12-13
+  [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['FEDE','ALE'],['RUF','mizuno'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 13-14
+  [['RUF','ANDRE'],['RUF','ANDRE','SOFI','FEDE'],['FEDE','ALE'],['RUF','mizuno','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 14-15
+  [['RUF','ANDRE'],['RUF','ANDRE','SOFI','FEDE'],['FEDE','ALE'],['RUF','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 15-16
+  [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 16-17
+  [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 17-18
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','ANDRE','ALE','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 18-19
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
+  // 19-20
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
 ];
 let W2=[
-  [['RUF','ANDRE'],['RUF'],[],['SAM','FEDE','SOFI'],['MATTEO','SAM'],['SAM','FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF'],[],['SAM','FEDE','SOFI','awake'],['MATTEO','SAM'],['SAM','FEDE','SOFI','vans','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF'],['RUF','SOFI','oakley'],['SAM','FEDE','SOFI','suicoke'],['MATTEO','SAM'],['SAM','FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF'],['RUF','SOFI'],['SAM','FEDE','SOFI','asics'],['MATTEO','SAM'],['SAM','FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE'],['RUF'],['RUF','SOFI'],['SAM','FEDE','SOFI'],['MATTEO','SAM','umbro'],['SAM','FEDE','SOFI','evisu','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE','SOFI'],['RUF'],['MATTEO','mizuno'],['MATTEO','SAM','saucony'],['MATTEO','SAM'],['RUF','SAM','SOFI','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE','SOFI'],['RUF'],['MATTEO'],['MATTEO','SAM','alpha'],['MATTEO','SAM','hoka'],['RUF','SAM','SOFI','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE','SOFI'],['RUF'],['MATTEO'],['MATTEO','SAM'],['MATTEO','SAM','deus'],['RUF','SAM','SOFI','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE','SOFI'],['RUF'],['MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['RUF','SAM','SOFI','DIEGO'],['RUF','MATTEO']],
-  [['RUF','ANDRE','SOFI'],['RUF'],['MATTEO'],['MATTEO','SAM'],['MATTEO','SAM','asics'],['RUF','SAM','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 10-11
+  [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','SAM'],['MATTEO','SAM'],['FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 11-12
+  [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','awake','SAM'],['MATTEO','SAM'],['FEDE','SOFI','vans','DIEGO'],['RUF','MATTEO']],
+  // 12-13
+  [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','oakley','SAM'],['FEDE','SOFI','suicoke','SAM'],['MATTEO','SAM'],['FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 13-14
+  [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','asics','SAM'],['MATTEO','SAM'],['FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 14-15
+  [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','SAM'],['MATTEO','SAM','umbro'],['FEDE','SOFI','evisu','DIEGO'],['RUF','MATTEO']],
+  // 15-16
+  [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','mizuno','SAM'],['MATTEO','SAM','saucony'],['MATTEO','SAM'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 16-17
+  [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM','alpha'],['MATTEO','SAM','hoka'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 17-18
+  [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM','deus'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 18-19
+  [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
+  // 19-20
+  [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM','asics'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
 ];
 
 try{const s=localStorage.getItem('negozio_schedule');if(s){const p=JSON.parse(s);W1=p.W1;W2=p.W2;}}catch(e){}
@@ -540,13 +588,41 @@ function closePopup(e){
   document.getElementById('overlay').classList.remove('show');currentCell=null;
 }
 
-// ── TASKS ─────────────────────────────────────────────────────
+// ── TASKS (Firebase Firestore) ────────────────────────────────
 let tasks={};
-try{tasks=JSON.parse(localStorage.getItem('negozio_tasks')||'{}');}catch(e){}
-function saveTasks(){try{localStorage.setItem('negozio_tasks',JSON.stringify(tasks));}catch(e){}}
-function addTask(w,day,text){if(!tasks[w])tasks[w]=[];tasks[w].push({id:Date.now(),day,text,done:false});saveTasks();}
-function toggleTask(w,id){const t=tasks[w]?.find(t=>t.id===id);if(t){t.done=!t.done;saveTasks();}}
-function deleteTask(w,id){if(tasks[w])tasks[w]=tasks[w].filter(t=>t.id!==id);saveTasks();}
+let _unsubscribe=null;
+
+function startTaskSync(){
+  if(_unsubscribe)_unsubscribe();
+  const {collection,onSnapshot}=window._fbFns;
+  const db=window._db;
+  _unsubscribe=onSnapshot(collection(db,'tasks'),(snapshot)=>{
+    tasks={};
+    snapshot.forEach(docSnap=>{
+      const d=docSnap.data();
+      if(!tasks[d.worker])tasks[d.worker]=[];
+      tasks[d.worker].push({id:docSnap.id,day:d.day,text:d.text,done:d.done});
+    });
+    renderWorkersGrid();
+  });
+}
+
+async function addTask(w,day,text){
+  const {collection,addDoc,serverTimestamp}=window._fbFns;
+  await addDoc(collection(window._db,'tasks'),{worker:w,day,text,done:false,createdAt:serverTimestamp()});
+}
+
+async function toggleTask(w,id){
+  const t=tasks[w]?.find(t=>t.id===id);
+  if(!t)return;
+  const {doc,updateDoc}=window._fbFns;
+  await updateDoc(doc(window._db,'tasks',id),{done:!t.done});
+}
+
+async function deleteTask(w,id){
+  const {doc,deleteDoc}=window._fbFns;
+  await deleteDoc(doc(window._db,'tasks',id));
+}
 
 function getWorkerDays(wk){
   const days=[];const wu=wk.toUpperCase();
@@ -598,13 +674,14 @@ function renderWorkerCard(worker){
     <div class="worker-body">${formHTML}<ul class="task-list">${taskListHTML}</ul></div>
   </div>`;
 }
-function renderCard(w){const el=document.getElementById('card-'+w);if(el)el.outerHTML=renderWorkerCard(w);}
-function doAddTask(w){
+function renderCard(w){renderWorkersGrid();}
+async function doAddTask(w){
   const sel=document.getElementById('sel-'+w),inp=document.getElementById('inp-'+w);
   if(!inp||!sel)return;
   const text=inp.value.trim();
   if(!text||sel.value==='Nessun turno')return;
-  addTask(w,sel.value,text);renderWorkersGrid();
+  inp.value='';
+  await addTask(w,sel.value,text);
 }
 function renderWorkersGrid(){
   document.getElementById('workers-root').innerHTML=WORKERS.map(w=>renderWorkerCard(w)).join('');
