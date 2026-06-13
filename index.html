@@ -169,21 +169,6 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .empty-tasks{font-size:.78rem;color:var(--text3);text-align:center;padding:.9rem 0;}
 .card-locked{opacity:.4;pointer-events:none;}
 
-/* ── SETTINGS ── */
-.settings-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-bottom:1rem;}
-.settings-card h3{font-family:'Playfair Display',serif;font-size:1rem;margin-bottom:1rem;border-left:3px solid var(--accent);padding-left:.65rem;}
-.settings-row{display:flex;align-items:center;gap:10px;margin-bottom:.75rem;flex-wrap:wrap;}
-.settings-row label{font-size:.82rem;font-weight:500;color:var(--text2);min-width:80px;}
-.settings-row input[type=date]{font-family:'Inter',sans-serif;font-size:.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);outline:none;flex:1;}
-.settings-row input[type=date]:focus{border-color:var(--accent);}
-.btn-settings{padding:9px 18px;border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:.85rem;font-weight:500;cursor:pointer;width:100%;margin-top:.5rem;}
-.btn-apply{background:#1a1916;color:#fff;}
-.btn-apply:hover{background:#333;}
-.btn-danger{background:#fce4e4;color:#a32d2d;border:1px solid #f5c6c6;}
-.btn-danger:hover{background:#f5c6c6;}
-.settings-divider{border:none;border-top:1px solid var(--border);margin:1rem 0;}
-.settings-note{font-size:.75rem;color:var(--text3);margin-top:.5rem;}
-
 /* ── RESPONSIVE SHOW/HIDE ── */
 .mobile-only{display:none;}
 .desktop-only{display:block;}
@@ -267,7 +252,6 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 <nav>
   <button class="active" onclick="showTab('orario',this)">📅 Orario</button>
   <button onclick="showTab('task',this)">✅ Task</button>
-  <button id="settings-tab-btn" style="display:none" onclick="showTab('settings',this)">⚙️ Impostazioni</button>
 </nav>
 
 <!-- CELL EDITOR (sheet from bottom on mobile) -->
@@ -295,9 +279,6 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
     <div class="desktop-only" id="desktop-schedule"></div>
   </div>
   <div id="tab-task" style="display:none;"><div class="workers-grid" id="workers-root"></div></div>
-  <div id="tab-settings" style="display:none;">
-    <div id="settings-root"></div>
-  </div>
 </div>
 
 <script>
@@ -346,11 +327,9 @@ function enterApp(role,name){
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('user-badge').textContent=name+(role==='admin'?' ✦':'');
   document.getElementById('user-badge').className='badge '+(role==='admin'?'admin':'worker');
-  // Show settings tab only for admin
-  document.getElementById('settings-tab-btn').style.display=role==='admin'?'':'none';
   openToday();renderSchedule();
   // Start Firebase sync (wait if not ready yet)
-  function startAllSync(){startScheduleSync();startTaskSync();startDatesSync();}
+  function startAllSync(){startScheduleSync();startTaskSync();}
   if(window._firebaseReady){startAllSync();}
   else{window.addEventListener('firebase-ready',startAllSync,{once:true});}
 }
@@ -729,131 +708,9 @@ function renderWorkersGrid(){
   document.getElementById('workers-root').innerHTML=WORKERS.map(w=>renderWorkerCard(w)).join('');
 }
 
-// ── SETTINGS ─────────────────────────────────────────────────
-// Week day labels
-const DAY_LABELS=['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
-
-function getMonday(dateStr){
-  // Given any date string YYYY-MM-DD, return the Monday of that week
-  const d=new Date(dateStr);
-  const day=d.getDay();
-  const diff=d.getDate()-(day===0?6:day-1);
-  d.setDate(diff);
-  return d;
-}
-
-function formatDate(d){
-  return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
-}
-
-function applyNewDates(){
-  const w1start=document.getElementById('w1-start').value;
-  const w2start=document.getElementById('w2-start').value;
-  if(!w1start||!w2start){alert('Inserisci entrambe le date di inizio.');return;}
-
-  const d1=new Date(w1start);
-  const d2=new Date(w2start);
-
-  // Build 7 days for each week
-  for(let i=0;i<7;i++){
-    const day1=new Date(d1);day1.setDate(d1.getDate()+i);
-    WEEK_DAYS[i].date=formatDate(day1);
-    WEEK_DAYS[i].label=DAY_LABELS[i];
-
-    const day2=new Date(d2);day2.setDate(d2.getDate()+i);
-    WEEK2_DAYS[i].date=formatDate(day2);
-    WEEK2_DAYS[i].label=DAY_LABELS[i];
-  }
-
-  // Save dates to Firebase
-  saveDates();
-  renderSchedule();
-  renderSettings();
-  alert('✅ Date aggiornate! L'orario ora mostra le nuove settimane.');
-}
-
-function resetSchedule(){
-  if(!confirm('Sei sicuro? Questo svuota TUTTE le celle dell'orario per entrambe le settimane.'))return;
-  for(let hi=0;hi<10;hi++){
-    for(let di=0;di<7;di++){
-      W1[hi][di]=[];
-      W2[hi][di]=[];
-    }
-  }
-  saveSchedule();
-  renderSchedule();
-  alert('✅ Orario svuotato. Puoi inserire i nuovi turni.');
-}
-
-async function saveDates(){
-  if(!window._firebaseReady)return;
-  const {doc,setDoc}=window._fbFns;
-  await setDoc(doc(window._db,'schedule','dates'),{
-    WEEK_DAYS:JSON.stringify(WEEK_DAYS),
-    WEEK2_DAYS:JSON.stringify(WEEK2_DAYS)
-  });
-}
-
-function startDatesSync(){
-  const {doc,onSnapshot}=window._fbFns;
-  onSnapshot(doc(window._db,'schedule','dates'),(docSnap)=>{
-    if(docSnap.exists()){
-      try{
-        const d=docSnap.data();
-        const wd=JSON.parse(d.WEEK_DAYS);
-        const wd2=JSON.parse(d.WEEK2_DAYS);
-        for(let i=0;i<7;i++){WEEK_DAYS[i]=wd[i];WEEK2_DAYS[i]=wd2[i];}
-        renderSchedule();
-        if(document.getElementById('tab-settings').style.display!=='none')renderSettings();
-      }catch(e){}
-    }
-  });
-}
-
-function renderSettings(){
-  // Format dates for input[type=date] — need YYYY-MM-DD
-  function toInputDate(ddmm){
-    // ddmm = "15/06"
-    const parts=ddmm.split('/');
-    return`2026-${parts[1]}-${parts[0]}`;
-  }
-
-  const w1label=`${WEEK_DAYS[0].date} – ${WEEK_DAYS[6].date}`;
-  const w2label=`${WEEK2_DAYS[0].date} – ${WEEK2_DAYS[6].date}`;
-
-  document.getElementById('settings-root').innerHTML=`
-    <div class="settings-card">
-      <h3>📅 Cambia le date dell'orario</h3>
-      <p style="font-size:.78rem;color:var(--text2);margin-bottom:1rem;">
-        Settimana attuale: <strong>${w1label}</strong> e <strong>${w2label}</strong>
-      </p>
-      <div class="settings-row">
-        <label>Settimana 1</label>
-        <input type="date" id="w1-start" value="${toInputDate(WEEK_DAYS[0].date)}">
-      </div>
-      <div class="settings-row">
-        <label>Settimana 2</label>
-        <input type="date" id="w2-start" value="${toInputDate(WEEK2_DAYS[0].date)}">
-      </div>
-      <p class="settings-note">Inserisci il lunedì di ogni settimana — i 7 giorni si calcolano automaticamente.</p>
-      <button class="btn-settings btn-apply" onclick="applyNewDates()">✅ Applica nuove date</button>
-    </div>
-
-    <div class="settings-card">
-      <h3>🗑️ Svuota orario</h3>
-      <p style="font-size:.78rem;color:var(--text2);margin-bottom:1rem;">
-        Cancella tutte le celle per inserire il nuovo orario da zero. Le task non vengono toccate.
-      </p>
-      <button class="btn-settings btn-danger" onclick="resetSchedule()">🗑️ Svuota tutte le celle</button>
-    </div>
-  `;
-}
-
 function showTab(tab,btn){
   document.getElementById('tab-orario').style.display=tab==='orario'?'':'none';
   document.getElementById('tab-task').style.display=tab==='task'?'':'none';
-  document.getElementById('tab-settings').style.display=tab==='settings'?'':'none';
-  if(tab==='settings')renderSettings();
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
