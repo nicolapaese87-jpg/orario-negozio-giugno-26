@@ -25,7 +25,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Expose db and firebase functions globally
 window._db = db;
 window._fbFns = { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp };
 window._firebaseReady = true;
@@ -178,7 +177,6 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
   header h1{font-size:1.05rem;}
   header .sub{display:none;}
   .container{padding:.65rem;}
-  /* Bigger touch targets */
   nav button{padding:.85rem 1rem;font-size:.9rem;}
   .week-tab{padding:.65rem;font-size:.82rem;}
   .day-nav-btn{width:44px;height:44px;font-size:1.3rem;}
@@ -187,21 +185,17 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
   .day-table td{padding:.5rem .5rem;}
   .day-table td.hour{font-size:.75rem;}
   .day-table td.names .chip{font-size:.75rem;padding:4px 9px;}
-  /* Task cards full width, larger touch */
   .task-item{padding:10px 12px;}
   .task-item input[type=checkbox]{width:22px;height:22px;}
   .task-text{font-size:.88rem;}
   .btn-del{font-size:1.3rem;padding:0 4px;}
-  /* Worker card header bigger */
   .worker-card-header{padding:1rem 1.1rem .8rem;}
   .avatar{width:44px;height:44px;font-size:1rem;}
   .worker-name{font-size:1rem;}
   .worker-shifts{font-size:.75rem;}
-  /* Task form stacked */
   .task-form{flex-direction:column;}
   .task-form select,.task-form input{font-size:.9rem;padding:9px 12px;width:100%;}
   .btn-add{width:100%;padding:10px;font-size:.9rem;}
-  /* Bottom safe area for home bar */
   .container{padding-bottom:calc(.65rem + var(--safe-bottom));}
 }
 </style>
@@ -254,7 +248,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
   <button onclick="showTab('task',this)">✅ Task</button>
 </nav>
 
-<!-- CELL EDITOR (sheet from bottom on mobile) -->
+<!-- CELL EDITOR -->
 <div id="overlay" onclick="closePopup(event)">
   <div id="popup">
     <h3 id="popup-title">Modifica cella</h3>
@@ -273,9 +267,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 
 <div class="container">
   <div id="tab-orario">
-    <!-- MOBILE VIEW -->
     <div class="mobile-only" id="mobile-schedule"></div>
-    <!-- DESKTOP VIEW -->
     <div class="desktop-only" id="desktop-schedule"></div>
   </div>
   <div id="tab-task" style="display:none;"><div class="workers-grid" id="workers-root"></div></div>
@@ -328,7 +320,6 @@ function enterApp(role,name){
   document.getElementById('user-badge').textContent=name+(role==='admin'?' ✦':'');
   document.getElementById('user-badge').className='badge '+(role==='admin'?'admin':'worker');
   openToday();renderSchedule();
-  // Start Firebase sync (wait if not ready yet)
   function startAllSync(){startScheduleSync();startTaskSync();}
   if(window._firebaseReady){startAllSync();}
   else{window.addEventListener('firebase-ready',startAllSync,{once:true});}
@@ -366,54 +357,33 @@ const WEEK2_DAYS=[
   {date:'22/06',label:'Lunedì'},{date:'23/06',label:'Martedì'},{date:'24/06',label:'Mercoledì'},
   {date:'25/06',label:'Giovedì'},{date:'26/06',label:'Venerdì'},{date:'27/06',label:'Sabato'},{date:'28/06',label:'Domenica'},
 ];
-const ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS]; // 14 giorni totali
+const ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS];
 
 let W1=[
-  // 10-11
   [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['FEDE','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 11-12
   [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['FEDE','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 12-13
   [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['FEDE','ALE'],['RUF','mizuno'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 13-14
   [['RUF','ANDRE'],['RUF','ANDRE','SOFI','FEDE'],['FEDE','ALE'],['RUF','mizuno','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 14-15
   [['RUF','ANDRE'],['RUF','ANDRE','SOFI','FEDE'],['FEDE','ALE'],['RUF','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 15-16
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 16-17
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','saucony','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 17-18
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','ANDRE','ALE','FEDE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 18-19
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
-  // 19-20
   [['RUF','ANDRE'],['ANDRE','ALE','MATTEO'],['RUF','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
 ];
 let W2=[
-  // 10-11
   [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','SAM'],['MATTEO','SAM'],['FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
-  // 11-12
   [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','awake','SAM'],['MATTEO','SAM'],['FEDE','SOFI','vans','DIEGO'],['RUF','MATTEO']],
-  // 12-13
   [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','oakley','SAM'],['FEDE','SOFI','suicoke','SAM'],['MATTEO','SAM'],['FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
-  // 13-14
   [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','asics','SAM'],['MATTEO','SAM'],['FEDE','SOFI','DIEGO'],['RUF','MATTEO']],
-  // 14-15
   [['RUF','ANDRE'],['RUF','FEDE'],['RUF','SOFI','SAM'],['FEDE','SOFI','SAM'],['MATTEO','SAM','umbro'],['FEDE','SOFI','evisu','DIEGO'],['RUF','MATTEO']],
-  // 15-16
   [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','mizuno','SAM'],['MATTEO','SAM','saucony'],['MATTEO','SAM'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
-  // 16-17
   [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM','alpha'],['MATTEO','SAM','hoka'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
-  // 17-18
   [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM','deus'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
-  // 18-19
   [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
-  // 19-20
   [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM','asics'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
 ];
 
-// Schedule is synced via Firebase — W1/W2 are defaults until Firebase loads
 let _scheduleUnsubscribe=null;
 
 async function saveSchedule(){
@@ -435,7 +405,6 @@ function startScheduleSync(){
   });
 }
 
-// Helper: get cell data by global day index (0-13) and hour index
 function getCellData(globalDayIdx,hi){
   if(globalDayIdx<7)return W1[hi][globalDayIdx];
   return W2[hi][globalDayIdx-7];
@@ -452,7 +421,6 @@ function chipHTML(name){
   return`<span class="chip ${name.toLowerCase()}">${name.toUpperCase()}</span>`;
 }
 
-// ── DESKTOP TABLE ────────────────────────────────────────────
 function buildDesktopTable(weekDays,weekData,title,weekIdx){
   const isAdmin=currentRole==='admin';
   let html=`<div class="week-header">${title}</div>`;
@@ -474,16 +442,14 @@ function buildDesktopTable(weekDays,weekData,title,weekIdx){
   return html;
 }
 
-// ── MOBILE DAY VIEW ───────────────────────────────────────────
-let mobileWeekIdx=0; // 0=week1, 1=week2
-let mobileDayIdx=0;  // 0-6 within week
+let mobileWeekIdx=0;
+let mobileDayIdx=0;
 
 function renderMobile(){
   const isAdmin=currentRole==='admin';
   const globalDayIdx=mobileWeekIdx*7+mobileDayIdx;
   const day=ALL_DAYS[globalDayIdx];
 
-  // dots: 7 per week
   let dots='';
   for(let i=0;i<7;i++)dots+=`<div class="day-dot${i===mobileDayIdx?' active':''}"></div>`;
 
@@ -524,7 +490,6 @@ function mobileNavDay(dir){
   renderMobile();
 }
 
-// ── SWIPE SUPPORT ─────────────────────────────────────────────
 let touchStartX=0,touchStartY=0;
 document.addEventListener('touchstart',e=>{
   touchStartX=e.touches[0].clientX;
@@ -539,7 +504,6 @@ document.addEventListener('touchend',e=>{
   }
 },{passive:true});
 
-// Open on today's date if within schedule range
 function openToday(){
   const today=new Date();
   const june=today.getFullYear()===2026&&today.getMonth()===5;
@@ -549,13 +513,10 @@ function openToday(){
   else if(d>=22&&d<=28){mobileWeekIdx=1;mobileDayIdx=d-22;}
 }
 
-// ── MAIN RENDER ───────────────────────────────────────────────
 function renderSchedule(){
-  // Desktop
   document.getElementById('desktop-schedule').innerHTML=
     buildDesktopTable(WEEK_DAYS,W1,'Settimana 15 – 21 giugno',0)+
     buildDesktopTable(WEEK2_DAYS,W2,'Settimana 22 – 28 giugno',1);
-  // Mobile
   renderMobile();
 }
 
@@ -609,7 +570,7 @@ function closePopup(e){
   document.getElementById('overlay').classList.remove('show');currentCell=null;
 }
 
-// ── TASKS (Firebase Firestore) ────────────────────────────────
+// ── TASKS ─────────────────────────────────────────────────────
 let tasks={};
 let _unsubscribe=null;
 
@@ -671,10 +632,10 @@ function renderWorkerCard(worker){
     wtasks.forEach(t=>{
       const canCheck=isAdmin||isMyCard;
       taskListHTML+=`<li class="task-item${t.done?' done':''}">
-        <input type="checkbox"${t.done?' checked':''}${canCheck?'':" disabled style='opacity:.3'"} onchange="toggleTask('${worker}',${t.id});renderCard('${worker}')">
+        <input type="checkbox"${t.done?' checked':''}${canCheck?'':" disabled style='opacity:.3'"} onchange="toggleTask('${worker}','${t.id}')">
         <span class="task-text">${t.text}</span>
         <span class="task-day-badge">${t.day.split(' ')[0]}</span>
-        ${isAdmin?`<button class="btn-del" onclick="deleteTask('${worker}',${t.id});renderCard('${worker}')">×</button>`:''}
+        ${isAdmin?`<button class="btn-del" onclick="deleteTask('${worker}','${t.id}')">×</button>`:''}
       </li>`;
     });
   }
