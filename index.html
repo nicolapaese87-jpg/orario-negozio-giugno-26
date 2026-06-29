@@ -768,11 +768,14 @@ function addTagFromInput(){
   if(v&&!editTags.includes(v)){editTags.push(v);renderTags();}
   inp.value='';
 }
-function saveCell(){
+async function saveCell(){
   if(!currentCell)return;
   const{wi,hi,di}=currentCell;
   setCellData(wi*7+di,hi,[...editTags]);
-  saveSchedule();openToday();renderSchedule();renderWorkersGrid();closePopup();
+  closePopup();
+  renderSchedule();
+  renderWorkersGrid();
+  await saveSchedule();
 }
 function closePopup(e){
   if(e&&e.target!==document.getElementById('overlay'))return;
