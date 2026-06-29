@@ -177,6 +177,11 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .task-day-badge{font-size:.68rem;font-weight:500;padding:2px 7px;border-radius:4px;background:var(--accent-light);color:var(--accent);white-space:nowrap;}
 .btn-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:1.1rem;padding:0 2px;line-height:1;-webkit-tap-highlight-color:transparent;}
 .empty-tasks{font-size:.78rem;color:var(--text3);text-align:center;padding:.9rem 0;}
+.btn-archive{font-size:.72rem;padding:4px 10px;border:1px solid var(--border);background:none;border-radius:6px;color:var(--text3);cursor:pointer;font-family:'Inter',sans-serif;margin-top:.4rem;-webkit-tap-highlight-color:transparent;}
+.btn-archive:active{background:var(--bg);}
+.archive-section{margin-top:.6rem;border-top:1px dashed var(--border);padding-top:.6rem;}
+.archive-label{font-size:.68rem;color:var(--text3);margin-bottom:.4rem;}
+.task-item.done{opacity:.45;}
 .card-locked{opacity:.4;pointer-events:none;}
 
 /* ── RESPONSIVE SHOW/HIDE ── */
@@ -784,6 +789,7 @@ function closePopup(e){
 
 // ── TASKS ─────────────────────────────────────────────────────
 let tasks={};
+let archiveOpen={};
 let _unsubscribe=null;
 
 function startTaskSync(){
@@ -836,21 +842,34 @@ function renderWorkerCard(worker){
   const col=WORKER_COLORS[worker];
   const days=getWorkerDays(worker);
   const wtasks=tasks[worker]||[];
+  const open=wtasks.filter(t=>!t.done);
+  const done=wtasks.filter(t=>t.done);
   const daysOptions=days.length?days.map(d=>`<option value="${d}">${d}</option>`).join(''):`<option>Nessun turno</option>`;
-  let taskListHTML='';
-  if(!wtasks.length){
-    taskListHTML=`<li class="empty-tasks">Nessuna task ancora.</li>`;
-  }else{
-    wtasks.forEach(t=>{
-      const canCheck=isAdmin||isMyCard;
-      taskListHTML+=`<li class="task-item${t.done?' done':''}">
-        <input type="checkbox"${t.done?' checked':''}${canCheck?'':" disabled style='opacity:.3'"} onchange="toggleTask('${worker}','${t.id}')">
-        <span class="task-text">${t.text}</span>
-        <span class="task-day-badge">${t.day.split(' ')[0]}</span>
-        ${isAdmin?`<button class="btn-del" onclick="deleteTask('${worker}','${t.id}')">×</button>`:''}
-      </li>`;
-    });
+
+  function taskHTML(t){
+    const canCheck=isAdmin||isMyCard;
+    const chk=t.done?' checked':'';
+    const dis=canCheck?'':' disabled style="opacity:.3"';
+    return`<li class="task-item${t.done?' done':''}">
+      <input type="checkbox"${chk}${dis} onchange="toggleTask('${worker}','${t.id}')">
+      <span class="task-text">${t.text}</span>
+      <span class="task-day-badge">${t.day.split(' ')[0]}</span>
+      ${isAdmin?`<button class="btn-del" onclick="deleteTask('${worker}','${t.id}')">×</button>`:''}
+    </li>`;
   }
+
+  const openHTML=open.length?open.map(taskHTML).join(''):`<li class="empty-tasks">Nessuna task aperta.</li>`;
+
+  let archiveHTML='';
+  if(done.length){
+    const isOpen=archiveOpen[worker];
+    const archiveList=isOpen?`<div class="archive-label" style="margin-top:.4rem">Task completate</div><ul class="task-list" style="max-height:180px">${done.map(taskHTML).join('')}</ul>`:'';
+    archiveHTML=`<div class="archive-section">
+      <button class="btn-archive" onclick="toggleArchive('${worker}')">${isOpen?'▾':'▸'} Archivio (${done.length})</button>
+      ${archiveList}
+    </div>`;
+  }
+
   const formHTML=isAdmin?`<div class="task-form">
     <select id="sel-${worker}">${daysOptions}</select>
     <input type="text" id="inp-${worker}" placeholder="Nuova task…" onkeydown="if(event.key==='Enter')doAddTask('${worker}')">
@@ -862,11 +881,15 @@ function renderWorkerCard(worker){
       <div class="avatar" style="background:${col.bg};color:${col.color}">${worker.slice(0,2)}</div>
       <div>
         <div class="worker-name" style="color:${col.color}">${worker}${isMyCard?' 👋':''}</div>
-        <div class="worker-shifts">${days.length} turni · ${wtasks.filter(t=>!t.done).length} task aperte</div>
+        <div class="worker-shifts">${days.length} turni · ${open.length} task aperte</div>
       </div>
     </div>
-    <div class="worker-body">${formHTML}<ul class="task-list">${taskListHTML}</ul></div>
+    <div class="worker-body">${formHTML}<ul class="task-list">${openHTML}</ul>${archiveHTML}</div>
   </div>`;
+}
+function toggleArchive(w){
+  archiveOpen[w]=!archiveOpen[w];
+  renderWorkersGrid();
 }
 function renderCard(w){renderWorkersGrid();}
 async function doAddTask(w){
