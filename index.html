@@ -744,13 +744,17 @@ function openCell(key){
 
 function renderTags(){
   const tl=document.getElementById('tag-list');
-  if(!editTags.length){tl.innerHTML='<span style="font-size:.75rem;color:var(--text3)">Nessun nome</span>';return;}
-  tl.innerHTML=editTags.map((name,i)=>{
-    const isBr=isBrand(name.toLowerCase());
-    const style=isBr?'background:#f0f0f0;color:#555;border-color:#ddd'
-      :`background:${WORKER_COLORS[name.toUpperCase()]?.bg||'#eee'};color:${WORKER_COLORS[name.toUpperCase()]?.color||'#333'};border-color:transparent`;
-    return`<span class="tag-item" style="${style}">${name}<button onclick="removeTag(${i})">×</button></span>`;
-  }).join('');
+  if(!editTags.length){
+    tl.innerHTML='<span style="font-size:.75rem;color:var(--text3)">Nessun nome</span>';
+  } else {
+    tl.innerHTML=editTags.map((name,i)=>{
+      const isBr=isBrand(name.toLowerCase());
+      const style=isBr?'background:#f0f0f0;color:#555;border-color:#ddd'
+        :`background:${WORKER_COLORS[name.toUpperCase()]?.bg||'#eee'};color:${WORKER_COLORS[name.toUpperCase()]?.color||'#333'};border-color:transparent`;
+      return`<span class="tag-item" style="${style}">${name}<button onclick="removeTag(${i})">×</button></span>`;
+    }).join('');
+  }
+  // I bottoni colorati vengono sempre mostrati (quelli non ancora in cella)
   document.getElementById('quick-btns').innerHTML=WORKERS.filter(w=>!editTags.includes(w)).map(w=>{
     const col=WORKER_COLORS[w];
     return`<button class="qbtn" style="background:${col.bg};color:${col.color};border-color:${col.bg}" onclick="quickAdd('${w}')">${w}</button>`;
