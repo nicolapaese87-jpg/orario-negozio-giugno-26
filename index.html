@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1a1916">
-<title>Orario Negozio — Giugno 2026</title>
+<title>Gestione Turni</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -24,7 +24,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-
 window._db = db;
 window._fbFns = { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp };
 window._firebaseReady = true;
@@ -111,7 +110,6 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .day-nav-dots{display:flex;gap:4px;justify-content:center;margin-bottom:.75rem;}
 .day-dot{width:6px;height:6px;border-radius:50%;background:var(--border);transition:background .15s;}
 .day-dot.active{background:var(--accent);}
-
 .day-table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
 .day-table th{background:#1a1916;color:#f7f5f0;padding:.45rem .6rem;font-size:.72rem;font-weight:500;}
 .day-table th:first-child{width:52px;}
@@ -126,7 +124,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .week-tab{flex:1;padding:.55rem;font-family:'Inter',sans-serif;font-size:.78rem;font-weight:500;border:none;background:none;cursor:pointer;color:var(--text2);transition:all .15s;-webkit-tap-highlight-color:transparent;}
 .week-tab.active{background:#1a1916;color:#fff;}
 
-/* ── POPUP ── */
+/* ── POPUP (cell editor) ── */
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-end;justify-content:center;}
 #overlay.show{display:flex;}
 #popup{background:var(--surface);border-radius:16px 16px 0 0;padding:1.25rem 1.25rem 2rem;width:100%;max-width:500px;}
@@ -141,6 +139,19 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .qbtn{font-size:.72rem;padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:none;cursor:pointer;color:var(--text2);font-family:'Inter',sans-serif;-webkit-tap-highlight-color:transparent;}
 .popup-actions{display:flex;gap:8px;justify-content:flex-end;}
 .btn-save{padding:8px 20px;background:#1a1916;color:#f7f5f0;border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:.88rem;font-weight:500;cursor:pointer;}
+
+/* ── MONTH PICKER ── */
+#month-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-end;justify-content:center;}
+#month-overlay.show{display:flex;}
+#month-popup{background:var(--surface);border-radius:16px 16px 0 0;padding:1.25rem 1.25rem 2rem;width:100%;max-width:400px;}
+#month-popup h3{font-size:.9rem;font-weight:600;margin-bottom:1rem;}
+.month-row{display:flex;gap:10px;margin-bottom:.75rem;align-items:center;}
+.month-row label{font-size:.8rem;color:var(--text2);width:48px;flex-shrink:0;}
+.month-row select{flex:1;font-family:'Inter',sans-serif;font-size:.9rem;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);outline:none;-webkit-appearance:auto;}
+.month-row select:focus{border-color:var(--accent);}
+.month-preview{font-size:.74rem;color:var(--text2);background:var(--bg);border-radius:8px;padding:.65rem .8rem;margin-bottom:.75rem;line-height:1.9;}
+.month-warn{font-size:.72rem;color:#c17f24;background:var(--accent-light);border-radius:6px;padding:.4rem .6rem;margin-bottom:.75rem;}
+.month-actions{display:flex;gap:8px;justify-content:flex-end;}
 
 /* ── TASKS ── */
 .workers-grid{display:grid;grid-template-columns:1fr;gap:1rem;}
@@ -206,7 +217,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 <div id="login-screen">
   <div class="login-box">
     <h2>Gestione Turni</h2>
-    <p class="sub">Giugno 2026 — Chi sei?</p>
+    <p class="sub" id="login-sub">Chi sei?</p>
     <div id="step-name">
       <select class="worker-select" id="worker-select" onchange="document.getElementById('login-error').textContent=''">
         <option value="">— Seleziona il tuo nome —</option>
@@ -236,7 +247,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 
 <!-- APP -->
 <header>
-  <div><h1>Gestione Turni</h1><div class="sub">Giugno 2026</div></div>
+  <div><h1>Gestione Turni</h1><div class="sub" id="header-period">—</div></div>
   <div class="user-badge">
     <span class="badge" id="user-badge">—</span>
     <button class="btn-logout" onclick="logout()">Esci</button>
@@ -246,6 +257,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 <nav>
   <button class="active" onclick="showTab('orario',this)">📅 Orario</button>
   <button onclick="showTab('task',this)">✅ Task</button>
+  <button id="btn-month" onclick="openMonthPicker()" style="display:none">📆 Mese</button>
 </nav>
 
 <!-- CELL EDITOR -->
@@ -261,6 +273,34 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
     <div class="popup-actions">
       <button class="btn-cancel" onclick="closePopup()">Annulla</button>
       <button class="btn-save" onclick="saveCell()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MONTH PICKER -->
+<div id="month-overlay" onclick="closeMonthPicker(event)">
+  <div id="month-popup">
+    <h3>📆 Cambia mese</h3>
+    <div class="month-row">
+      <label>Mese</label>
+      <select id="pick-month" onchange="updateMonthPreview()">
+        <option value="0">Gennaio</option><option value="1">Febbraio</option>
+        <option value="2">Marzo</option><option value="3">Aprile</option>
+        <option value="4">Maggio</option><option value="5">Giugno</option>
+        <option value="6">Luglio</option><option value="7">Agosto</option>
+        <option value="8">Settembre</option><option value="9">Ottobre</option>
+        <option value="10">Novembre</option><option value="11">Dicembre</option>
+      </select>
+    </div>
+    <div class="month-row">
+      <label>Anno</label>
+      <select id="pick-year" onchange="updateMonthPreview()"></select>
+    </div>
+    <div class="month-preview" id="month-preview"></div>
+    <div class="month-warn">⚠️ Cambiare mese azzera l'orario delle due settimane.</div>
+    <div class="month-actions">
+      <button class="btn-cancel" onclick="closeMonthPicker()">Annulla</button>
+      <button class="btn-save" onclick="applyMonth()">Applica</button>
     </div>
   </div>
 </div>
@@ -319,6 +359,7 @@ function enterApp(role,name){
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('user-badge').textContent=name+(role==='admin'?' ✦':'');
   document.getElementById('user-badge').className='badge '+(role==='admin'?'admin':'worker');
+  if(role==='admin')document.getElementById('btn-month').style.display='';
   openToday();renderSchedule();
   function startAllSync(){startScheduleSync();startTaskSync();}
   if(window._firebaseReady){startAllSync();}
@@ -334,6 +375,7 @@ function logout(){
   document.getElementById('login-error').textContent='';
   document.getElementById('step-pin').style.display='none';
   document.getElementById('step-name').style.display='block';
+  document.getElementById('btn-month').style.display='none';
   updatePinDisplay();
 }
 
@@ -348,16 +390,47 @@ const WORKER_COLORS={
 const HOURS=['10-11','11-12','12-13','13-14','14-15','15-16','16-17','17-18','18-19','19-20'];
 const BRANDS=['carhartt','mizuno','saucony','oakley','suicoke','asics','vans','evisu','roa','umbro','hoka','deus','alpha','awake'];
 const ALL_NAMES=[...WORKERS,...BRANDS];
+const DAY_LABELS=['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
+const MONTH_NAMES=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 
-const WEEK_DAYS=[
-  {date:'15/06',label:'Lunedì'},{date:'16/06',label:'Martedì'},{date:'17/06',label:'Mercoledì'},
-  {date:'18/06',label:'Giovedì'},{date:'19/06',label:'Venerdì'},{date:'20/06',label:'Sabato'},{date:'21/06',label:'Domenica'},
-];
-const WEEK2_DAYS=[
-  {date:'22/06',label:'Lunedì'},{date:'23/06',label:'Martedì'},{date:'24/06',label:'Mercoledì'},
-  {date:'25/06',label:'Giovedì'},{date:'26/06',label:'Venerdì'},{date:'27/06',label:'Sabato'},{date:'28/06',label:'Domenica'},
-];
-const ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS];
+// ── PERIODO CORRENTE (default: giugno 2026 come originale) ────
+let currentMonth=5; // 0-based
+let currentYear=2026;
+let WEEK_DAYS=[];
+let WEEK2_DAYS=[];
+let ALL_DAYS=[];
+
+function buildWeeks(month,year){
+  // Prima settimana: primo lunedì del mese
+  const firstDay=new Date(year,month,1);
+  // Trova il primo lunedì (getDay: 0=dom,1=lun,...,6=sab)
+  let d=firstDay.getDay(); // 0=dom
+  let offset=d===0?1:(d===1?0:8-d); // giorni fino al prossimo lunedì
+  const w1start=new Date(year,month,1+offset);
+  // Seconda settimana: 7 giorni dopo
+  const w2start=new Date(w1start);
+  w2start.setDate(w2start.getDate()+7);
+
+  function makeWeek(start){
+    return DAY_LABELS.map((label,i)=>{
+      const d=new Date(start);
+      d.setDate(d.getDate()+i);
+      const day=String(d.getDate()).padStart(2,'0');
+      const mon=String(d.getMonth()+1).padStart(2,'0');
+      return{date:`${day}/${mon}`,label,fullDate:d};
+    });
+  }
+  WEEK_DAYS=makeWeek(w1start);
+  WEEK2_DAYS=makeWeek(w2start);
+  ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS];
+}
+
+function emptySchedule(){
+  return Array.from({length:10},()=>Array.from({length:7},()=>[]));
+}
+
+// Inizializza con i dati originali di giugno 2026
+buildWeeks(5,2026);
 
 let W1=[
   [['RUF','ANDRE'],['RUF','carhartt','SOFI','FEDE'],['FEDE','ALE'],['RUF','ANDRE','ALE'],['RUF','ANDRE'],['ALE','DIEGO'],['RUF','MATTEO']],
@@ -384,12 +457,24 @@ let W2=[
   [['RUF','ANDRE','SOFI'],['RUF','MATTEO'],['MATTEO','SAM'],['MATTEO','SAM'],['MATTEO','SAM','asics'],['RUF','SOFI','DIEGO'],['RUF','MATTEO']],
 ];
 
+function updateHeaderPeriod(){
+  const w1s=WEEK_DAYS[0].date;
+  const w2e=WEEK2_DAYS[6].date;
+  document.getElementById('header-period').textContent=
+    `${w1s} – ${w2e} · ${MONTH_NAMES[currentMonth]} ${currentYear}`;
+}
+
 let _scheduleUnsubscribe=null;
 
 async function saveSchedule(){
   if(!window._firebaseReady)return;
   const {doc,setDoc}=window._fbFns;
-  await setDoc(doc(window._db,'schedule','orario'),{W1:JSON.stringify(W1),W2:JSON.stringify(W2)});
+  await setDoc(doc(window._db,'schedule','orario'),{
+    W1:JSON.stringify(W1),
+    W2:JSON.stringify(W2),
+    month:currentMonth,
+    year:currentYear
+  });
 }
 
 function startScheduleSync(){
@@ -399,6 +484,12 @@ function startScheduleSync(){
     if(docSnap.exists()){
       const d=docSnap.data();
       try{W1=JSON.parse(d.W1);W2=JSON.parse(d.W2);}catch(e){}
+      if(d.month!=null&&d.year!=null){
+        currentMonth=d.month;
+        currentYear=d.year;
+        buildWeeks(currentMonth,currentYear);
+      }
+      updateHeaderPeriod();
       renderSchedule();
       renderWorkersGrid();
     }
@@ -414,6 +505,59 @@ function setCellData(globalDayIdx,hi,val){
   else W2[hi][globalDayIdx-7]=val;
 }
 
+// ── MONTH PICKER ─────────────────────────────────────────────
+function openMonthPicker(){
+  if(currentRole!=='admin')return;
+  // Popola anni (anno corrente -1 / +2)
+  const selY=document.getElementById('pick-year');
+  selY.innerHTML='';
+  for(let y=currentYear-1;y<=currentYear+3;y++){
+    const o=document.createElement('option');
+    o.value=y;o.textContent=y;
+    if(y===currentYear)o.selected=true;
+    selY.appendChild(o);
+  }
+  document.getElementById('pick-month').value=currentMonth;
+  updateMonthPreview();
+  document.getElementById('month-overlay').classList.add('show');
+}
+
+function updateMonthPreview(){
+  const m=parseInt(document.getElementById('pick-month').value);
+  const y=parseInt(document.getElementById('pick-year').value);
+  // Calcola le due settimane per anteprima
+  const firstDay=new Date(y,m,1);
+  let dw=firstDay.getDay();
+  let offset=dw===0?1:(dw===1?0:8-dw);
+  const w1s=new Date(y,m,1+offset);
+  const w1e=new Date(w1s);w1e.setDate(w1e.getDate()+6);
+  const w2s=new Date(w1s);w2s.setDate(w2s.getDate()+7);
+  const w2e=new Date(w2s);w2e.setDate(w2e.getDate()+6);
+  function fmt(d){return`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;}
+  document.getElementById('month-preview').innerHTML=
+    `📅 Settimana 1: <b>${fmt(w1s)} – ${fmt(w1e)}</b><br>📅 Settimana 2: <b>${fmt(w2s)} – ${fmt(w2e)}</b>`;
+}
+
+function closeMonthPicker(e){
+  if(e&&e.target!==document.getElementById('month-overlay'))return;
+  document.getElementById('month-overlay').classList.remove('show');
+}
+
+async function applyMonth(){
+  const m=parseInt(document.getElementById('pick-month').value);
+  const y=parseInt(document.getElementById('pick-year').value);
+  currentMonth=m;currentYear=y;
+  buildWeeks(m,y);
+  W1=emptySchedule();
+  W2=emptySchedule();
+  mobileWeekIdx=0;mobileDayIdx=0;
+  updateHeaderPeriod();
+  await saveSchedule();
+  renderSchedule();
+  renderWorkersGrid();
+  closeMonthPicker();
+}
+
 // ── RENDER ─────────────────────────────────────────────────────
 function isBrand(s){return BRANDS.includes(s.toLowerCase());}
 function chipHTML(name){
@@ -421,9 +565,10 @@ function chipHTML(name){
   return`<span class="chip ${name.toLowerCase()}">${name.toUpperCase()}</span>`;
 }
 
-function buildDesktopTable(weekDays,weekData,title,weekIdx){
+function buildDesktopTable(weekDays,weekData,weekIdx){
   const isAdmin=currentRole==='admin';
-  let html=`<div class="week-header">${title}</div>`;
+  const w1s=weekDays[0].date;const w1e=weekDays[6].date;
+  let html=`<div class="week-header">Settimana ${w1s} – ${w1e}</div>`;
   if(isAdmin)html+=`<p class="edit-hint">✏️ Tocca una cella per modificarla</p>`;
   html+=`<div class="schedule-wrap"><table class="schedule"><thead><tr><th>Ora</th>`;
   weekDays.forEach(d=>{html+=`<th><div class="dname">${d.label}</div><div class="ddate">${d.date}</div></th>`;});
@@ -449,6 +594,7 @@ function renderMobile(){
   const isAdmin=currentRole==='admin';
   const globalDayIdx=mobileWeekIdx*7+mobileDayIdx;
   const day=ALL_DAYS[globalDayIdx];
+  const weekDays=mobileWeekIdx===0?WEEK_DAYS:WEEK2_DAYS;
 
   let dots='';
   for(let i=0;i<7;i++)dots+=`<div class="day-dot${i===mobileDayIdx?' active':''}"></div>`;
@@ -462,16 +608,19 @@ function renderMobile(){
     else rows+=`<tr><td class="hour">${h}</td><td class="names">${content}</td></tr>`;
   });
 
+  const w1label=`${WEEK_DAYS[0].date}–${WEEK_DAYS[6].date}`;
+  const w2label=`${WEEK2_DAYS[0].date}–${WEEK2_DAYS[6].date}`;
+
   const html=`
     <div class="week-tabs">
-      <button class="week-tab${mobileWeekIdx===0?' active':''}" onclick="setMobileWeek(0)">15–21 giugno</button>
-      <button class="week-tab${mobileWeekIdx===1?' active':''}" onclick="setMobileWeek(1)">22–28 giugno</button>
+      <button class="week-tab${mobileWeekIdx===0?' active':''}" onclick="setMobileWeek(0)">${w1label}</button>
+      <button class="week-tab${mobileWeekIdx===1?' active':''}" onclick="setMobileWeek(1)">${w2label}</button>
     </div>
     <div class="day-nav">
       <button class="day-nav-btn" onclick="mobileNavDay(-1)">‹</button>
       <div class="day-nav-title">
         <div class="dname">${day.label}</div>
-        <div class="ddate">${day.date}/2026</div>
+        <div class="ddate">${day.date}/${currentYear}</div>
       </div>
       <button class="day-nav-btn" onclick="mobileNavDay(1)">›</button>
     </div>
@@ -506,17 +655,23 @@ document.addEventListener('touchend',e=>{
 
 function openToday(){
   const today=new Date();
-  const june=today.getFullYear()===2026&&today.getMonth()===5;
-  if(!june)return;
+  if(today.getMonth()!==currentMonth||today.getFullYear()!==currentYear)return;
   const d=today.getDate();
-  if(d>=15&&d<=21){mobileWeekIdx=0;mobileDayIdx=d-15;}
-  else if(d>=22&&d<=28){mobileWeekIdx=1;mobileDayIdx=d-22;}
+  const w1start=WEEK_DAYS[0].fullDate;
+  const w2start=WEEK2_DAYS[0].fullDate;
+  const w1startD=w1start instanceof Date?w1start:new Date(currentYear,currentMonth,parseInt(WEEK_DAYS[0].date));
+  const diff1=Math.floor((today-w1startD)/(86400000));
+  if(diff1>=0&&diff1<7){mobileWeekIdx=0;mobileDayIdx=diff1;return;}
+  const w2startD=w2start instanceof Date?w2start:new Date(currentYear,currentMonth,parseInt(WEEK2_DAYS[0].date));
+  const diff2=Math.floor((today-w2startD)/(86400000));
+  if(diff2>=0&&diff2<7){mobileWeekIdx=1;mobileDayIdx=diff2;}
 }
 
 function renderSchedule(){
+  updateHeaderPeriod();
   document.getElementById('desktop-schedule').innerHTML=
-    buildDesktopTable(WEEK_DAYS,W1,'Settimana 15 – 21 giugno',0)+
-    buildDesktopTable(WEEK2_DAYS,W2,'Settimana 22 – 28 giugno',1);
+    buildDesktopTable(WEEK_DAYS,W1,0)+
+    buildDesktopTable(WEEK2_DAYS,W2,1);
   renderMobile();
 }
 
