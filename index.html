@@ -280,10 +280,10 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 <!-- MONTH PICKER -->
 <div id="month-overlay" onclick="closeMonthPicker(event)">
   <div id="month-popup">
-    <h3>📆 Cambia mese</h3>
+    <h3>📆 Imposta periodo</h3>
     <div class="month-row">
       <label>Mese</label>
-      <select id="pick-month" onchange="updateMonthPreview()">
+      <select id="pick-month" onchange="updateStartDayOptions();updateMonthPreview()">
         <option value="0">Gennaio</option><option value="1">Febbraio</option>
         <option value="2">Marzo</option><option value="3">Aprile</option>
         <option value="4">Maggio</option><option value="5">Giugno</option>
@@ -294,10 +294,14 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
     </div>
     <div class="month-row">
       <label>Anno</label>
-      <select id="pick-year" onchange="updateMonthPreview()"></select>
+      <select id="pick-year" onchange="updateStartDayOptions();updateMonthPreview()"></select>
+    </div>
+    <div class="month-row">
+      <label>Inizio</label>
+      <select id="pick-start" onchange="updateMonthPreview()"></select>
     </div>
     <div class="month-preview" id="month-preview"></div>
-    <div class="month-warn">⚠️ Cambiare mese azzera l'orario delle due settimane.</div>
+    <div class="month-warn">⚠️ Applicare azzera l'orario delle due settimane.</div>
     <div class="month-actions">
       <button class="btn-cancel" onclick="closeMonthPicker()">Annulla</button>
       <button class="btn-save" onclick="applyMonth()">Applica</button>
@@ -400,26 +404,26 @@ let WEEK_DAYS=[];
 let WEEK2_DAYS=[];
 let ALL_DAYS=[];
 
-function buildWeeks(month,year){
-  // Prima settimana: primo lunedì del mese
-  const firstDay=new Date(year,month,1);
-  // Trova il primo lunedì (getDay: 0=dom,1=lun,...,6=sab)
-  let d=firstDay.getDay(); // 0=dom
-  let offset=d===0?1:(d===1?0:8-d); // giorni fino al prossimo lunedì
-  const w1start=new Date(year,month,1+offset);
-  // Seconda settimana: 7 giorni dopo
-  const w2start=new Date(w1start);
-  w2start.setDate(w2start.getDate()+7);
-
+function buildWeeks(month,year,startDay){
+  // startDay: giorno del mese (1-31) del lunedì di inizio settimana 1
+  // Se non fornito, usa il primo lunedì del mese
+  if(!startDay){
+    const firstDay=new Date(year,month,1);
+    let dw=firstDay.getDay();
+    let offset=dw===0?1:(dw===1?0:8-dw);
+    startDay=1+offset;
+  }
   function makeWeek(start){
     return DAY_LABELS.map((label,i)=>{
       const d=new Date(start);
       d.setDate(d.getDate()+i);
       const day=String(d.getDate()).padStart(2,'0');
       const mon=String(d.getMonth()+1).padStart(2,'0');
-      return{date:`${day}/${mon}`,label,fullDate:d};
+      return{date:`${day}/${mon}`,label,fullDate:new Date(d)};
     });
   }
+  const w1start=new Date(year,month,startDay);
+  const w2start=new Date(year,month,startDay+7);
   WEEK_DAYS=makeWeek(w1start);
   WEEK2_DAYS=makeWeek(w2start);
   ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS];
@@ -469,11 +473,13 @@ let _scheduleUnsubscribe=null;
 async function saveSchedule(){
   if(!window._firebaseReady)return;
   const {doc,setDoc}=window._fbFns;
+  const startDay=WEEK_DAYS.length?WEEK_DAYS[0].fullDate.getDate():null;
   await setDoc(doc(window._db,'schedule','orario'),{
     W1:JSON.stringify(W1),
     W2:JSON.stringify(W2),
     month:currentMonth,
-    year:currentYear
+    year:currentYear,
+    startDay:startDay
   });
 }
 
@@ -487,7 +493,7 @@ function startScheduleSync(){
       if(d.month!=null&&d.year!=null){
         currentMonth=d.month;
         currentYear=d.year;
-        buildWeeks(currentMonth,currentYear);
+        buildWeeks(currentMonth,currentYear,d.startDay||null);
       }
       updateHeaderPeriod();
       renderSchedule();
@@ -508,7 +514,6 @@ function setCellData(globalDayIdx,hi,val){
 // ── MONTH PICKER ─────────────────────────────────────────────
 function openMonthPicker(){
   if(currentRole!=='admin')return;
-  // Popola anni (anno corrente -1 / +2)
   const selY=document.getElementById('pick-year');
   selY.innerHTML='';
   for(let y=currentYear-1;y<=currentYear+3;y++){
@@ -518,18 +523,47 @@ function openMonthPicker(){
     selY.appendChild(o);
   }
   document.getElementById('pick-month').value=currentMonth;
+  updateStartDayOptions();
+  // Imposta il giorno di inizio corrente
+  const selS=document.getElementById('pick-start');
+  if(WEEK_DAYS.length){
+    const curStart=WEEK_DAYS[0].fullDate;
+    selS.value=curStart.getDate();
+  }
   updateMonthPreview();
   document.getElementById('month-overlay').classList.add('show');
+}
+
+// Popola il selettore del giorno di inizio con tutti i lunedì del mese selezionato
+function updateStartDayOptions(){
+  const m=parseInt(document.getElementById('pick-month').value);
+  const y=parseInt(document.getElementById('pick-year').value);
+  const selS=document.getElementById('pick-start');
+  const prev=parseInt(selS.value)||1;
+  selS.innerHTML='';
+  // Trova tutti i lunedì del mese
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  for(let d=1;d<=daysInMonth;d++){
+    const day=new Date(y,m,d);
+    if(day.getDay()===1){ // lunedì
+      const o=document.createElement('option');
+      o.value=d;
+      const fmt=`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`;
+      o.textContent=`Lunedì ${fmt}`;
+      selS.appendChild(o);
+    }
+  }
+  // Prova a riselezionare il valore precedente
+  selS.value=prev;
+  if(!selS.value&&selS.options.length)selS.selectedIndex=0;
 }
 
 function updateMonthPreview(){
   const m=parseInt(document.getElementById('pick-month').value);
   const y=parseInt(document.getElementById('pick-year').value);
-  // Calcola le due settimane per anteprima
-  const firstDay=new Date(y,m,1);
-  let dw=firstDay.getDay();
-  let offset=dw===0?1:(dw===1?0:8-dw);
-  const w1s=new Date(y,m,1+offset);
+  const startDay=parseInt(document.getElementById('pick-start').value);
+  if(!startDay)return;
+  const w1s=new Date(y,m,startDay);
   const w1e=new Date(w1s);w1e.setDate(w1e.getDate()+6);
   const w2s=new Date(w1s);w2s.setDate(w2s.getDate()+7);
   const w2e=new Date(w2s);w2e.setDate(w2e.getDate()+6);
@@ -546,8 +580,24 @@ function closeMonthPicker(e){
 async function applyMonth(){
   const m=parseInt(document.getElementById('pick-month').value);
   const y=parseInt(document.getElementById('pick-year').value);
+  const startDay=parseInt(document.getElementById('pick-start').value);
+  if(!startDay)return;
   currentMonth=m;currentYear=y;
-  buildWeeks(m,y);
+  // Costruisce le settimane dal giorno scelto
+  function makeWeek(start){
+    return DAY_LABELS.map((label,i)=>{
+      const d=new Date(start);
+      d.setDate(d.getDate()+i);
+      const dd=String(d.getDate()).padStart(2,'0');
+      const mm=String(d.getMonth()+1).padStart(2,'0');
+      return{date:`${dd}/${mm}`,label,fullDate:new Date(d)};
+    });
+  }
+  const w1start=new Date(y,m,startDay);
+  const w2start=new Date(y,m,startDay+7);
+  WEEK_DAYS=makeWeek(w1start);
+  WEEK2_DAYS=makeWeek(w2start);
+  ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS];
   W1=emptySchedule();
   W2=emptySchedule();
   mobileWeekIdx=0;mobileDayIdx=0;
