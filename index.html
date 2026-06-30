@@ -99,6 +99,8 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .chip.sam{background:#d81b60;color:#fff;}
 .chip.diego{background:#f9a825;color:#1a1916;}
 .chip.brand{background:#ecebe8;color:#6b6660;font-style:italic;font-size:.6rem;border:1px solid #ddd;}
+.chip{position:relative;}
+.chip-task-dot{position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:#ff3b30;border:1.5px solid #fff;}
 
 /* ── MOBILE DAY VIEW ── */
 .day-nav{display:flex;align-items:center;gap:8px;margin-bottom:.75rem;}
@@ -615,9 +617,16 @@ async function applyMonth(){
 
 // ── RENDER ─────────────────────────────────────────────────────
 function isBrand(s){return BRANDS.includes(s.toLowerCase());}
-function chipHTML(name){
-  if(isBrand(name.toLowerCase()))return`<span class="chip brand">${name}</span>`;
-  return`<span class="chip ${name.toLowerCase()}">${name.toUpperCase()}</span>`;
+function hasOpenTaskOnDay(name,dayLabel){
+  if(isBrand(name.toLowerCase()))return false;
+  const wu=name.toUpperCase();
+  const wtasks=tasks[wu]||[];
+  return wtasks.some(t=>!t.done&&t.day===dayLabel);
+}
+function chipHTML(name,dayLabel){
+  const dot=dayLabel&&hasOpenTaskOnDay(name,dayLabel)?'<span class="chip-task-dot"></span>':'';
+  if(isBrand(name.toLowerCase()))return`<span class="chip brand">${name}${dot}</span>`;
+  return`<span class="chip ${name.toLowerCase()}">${name.toUpperCase()}${dot}</span>`;
 }
 
 function buildDesktopTable(weekDays,weekData,weekIdx){
@@ -630,9 +639,10 @@ function buildDesktopTable(weekDays,weekData,weekIdx){
   html+=`</tr></thead><tbody>`;
   HOURS.forEach((h,hi)=>{
     html+=`<tr><td class="hour">${h}</td>`;
-    weekDays.forEach((_,di)=>{
+    weekDays.forEach((d,di)=>{
       const names=weekData[hi][di];
-      const content=(names&&names.length)?`<div class="cell-names">${names.map(n=>chipHTML(n)).join('')}</div>`:'';
+      const dayLabel=d.date+' '+d.label;
+      const content=(names&&names.length)?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel)).join('')}</div>`:'';
       if(isAdmin)html+=`<td class="editable" onclick="openCell('${weekIdx}-${hi}-${di}')">${content}</td>`;
       else html+=`<td>${content}</td>`;
     });
@@ -655,9 +665,10 @@ function renderMobile(){
   for(let i=0;i<7;i++)dots+=`<div class="day-dot${i===mobileDayIdx?' active':''}"></div>`;
 
   let rows='';
+  const dayLabel=day.date+' '+day.label;
   HOURS.forEach((h,hi)=>{
     const names=getCellData(globalDayIdx,hi)||[];
-    const content=names.length?`<div class="cell-names">${names.map(n=>chipHTML(n)).join('')}</div>`:'';
+    const content=names.length?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel)).join('')}</div>`:'';
     const editKey=`${mobileWeekIdx}-${hi}-${mobileDayIdx}`;
     if(isAdmin)rows+=`<tr><td class="hour">${h}</td><td class="names editable" onclick="openCell('${editKey}')">${content}</td></tr>`;
     else rows+=`<tr><td class="hour">${h}</td><td class="names">${content}</td></tr>`;
@@ -804,10 +815,9 @@ function startTaskSync(){
       tasks[d.worker].push({id:docSnap.id,day:d.day,text:d.text,done:d.done});
     });
     renderWorkersGrid();
+    renderSchedule();
   });
-}
-
-async function addTask(w,day,text){
+}async function addTask(w,day,text){
   const {collection,addDoc,serverTimestamp}=window._fbFns;
   await addDoc(collection(window._db,'tasks'),{worker:w,day,text,done:false,createdAt:serverTimestamp()});
 }
