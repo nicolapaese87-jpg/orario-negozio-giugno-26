@@ -62,6 +62,7 @@ header .clock{margin-left:auto;font-size:.8rem;color:#a09890;white-space:nowrap;
 .user-badge{display:flex;align-items:center;gap:6px;margin-left:.75rem;}
 .badge{font-size:.68rem;padding:3px 9px;border-radius:20px;font-weight:500;white-space:nowrap;}
 .badge.admin{background:var(--accent);color:#fff;}
+.badge.taskmanager{background:#2b8a8a;color:#fff;}
 .badge.worker{background:#3c3489;color:#eeedfe;}
 .btn-logout{font-size:.68rem;padding:3px 9px;border:1px solid rgba(255,255,255,.25);border-radius:20px;background:none;color:#a09890;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
 
@@ -301,7 +302,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
     </div>
     <div class="month-row">
       <label>Anno</label>
-      <select id="pick-year" onchange="updateStartDayOptions();updateMonthPreview()"></select>
+      <select id="pick-year"></select>
     </div>
     <div class="month-row">
       <label>Inizio</label>
@@ -326,15 +327,21 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 
 <script>
 // ── AUTH ─────────────────────────────────────────────────────
-const ADMIN_USERS=['ANDRE','ALE'];
+// Chi deve inserire il PIN per accedere (ruoli con privilegi)
+const PIN_USERS=['ANDRE','ALE'];
 const ADMIN_PIN='6789';
+// Mappa nome -> ruolo. ALE è admin completo, ANDRE gestisce solo le task.
+const ROLE_MAP={ALE:'admin',ANDRE:'taskmanager'};
 let currentRole=null,currentWorker=null,pinBuffer='';
+
+function isAdmin(){return currentRole==='admin';}
+function canManageTasks(){return currentRole==='admin'||currentRole==='taskmanager';}
 
 function proceedFromName(){
   const sel=document.getElementById('worker-select').value;
   const err=document.getElementById('login-error');
   if(!sel){err.textContent='Seleziona il tuo nome.';return;}
-  if(ADMIN_USERS.includes(sel)){
+  if(PIN_USERS.includes(sel)){
     pinBuffer='';updatePinDisplay();
     document.getElementById('pin-label').textContent=`PIN per ${sel}`;
     document.getElementById('step-name').style.display='none';
@@ -362,15 +369,19 @@ function updatePinDisplay(){
 }
 function doLogin(){
   const sel=document.getElementById('worker-select').value;
-  if(pinBuffer===ADMIN_PIN){enterApp('admin',sel);}
+  if(pinBuffer===ADMIN_PIN){
+    const role=ROLE_MAP[sel]||'worker';
+    enterApp(role,sel);
+  }
   else{document.getElementById('login-error').textContent='PIN errato.';pinBuffer='';updatePinDisplay();}
 }
 function enterApp(role,name){
   currentRole=role;currentWorker=name;
   document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('user-badge').textContent=name+(role==='admin'?' ✦':'');
-  document.getElementById('user-badge').className='badge '+(role==='admin'?'admin':'worker');
-  if(role==='admin')document.getElementById('btn-month').style.display='';
+  const badgeMark=role==='admin'?' ✦':(role==='taskmanager'?' ✎':'');
+  document.getElementById('user-badge').textContent=name+badgeMark;
+  document.getElementById('user-badge').className='badge '+role;
+  document.getElementById('btn-month').style.display=isAdmin()?'':'none';
   openToday();renderSchedule();
   function startAllSync(){startScheduleSync();startTaskSync();}
   if(window._firebaseReady){startAllSync();}
@@ -477,17 +488,64 @@ function updateHeaderPeriod(){
 
 let _scheduleUnsubscribe=null;
 
+// ── Conversione formato: array 2D (10x7) <-> mappa piatta "hi_di" ──
+// La mappa piatta permette di salvare su Firestore SOLO la cella
+// modificata (updateDoc con dot-path), evitando che un dispositivo
+// con dati vecchi in memoria sovrascriva l'intero orario.
+function arraysToMap(arr){
+  const map={};
+  for(let hi=0;hi<10;hi++)for(let di=0;di<7;di++){
+    const v=arr[hi][di];
+    if(v&&v.length)map[`${hi}_${di}`]=v;
+  }
+  return map;
+}
+function mapToArrays(raw){
+  const arr=emptySchedule();
+  if(!raw)return arr;
+  // Compatibilità con il vecchio formato (stringa JSON dell'array intero)
+  if(typeof raw==='string'){
+    try{
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed))return parsed;
+    }catch(e){}
+    return arr;
+  }
+  Object.keys(raw).forEach(k=>{
+    const [hi,di]=k.split('_').map(Number);
+    if(arr[hi]&&di>=0&&di<7)arr[hi][di]=raw[k];
+  });
+  return arr;
+}
+
+// Salvataggio COMPLETO: usato solo per l'inizializzazione del documento
+// e per "Applica periodo" (che azzera esplicitamente l'orario).
 async function saveSchedule(){
   if(!window._firebaseReady)return;
   const {doc,setDoc}=window._fbFns;
   const startDay=WEEK_DAYS.length?WEEK_DAYS[0].fullDate.getDate():null;
   await setDoc(doc(window._db,'schedule','orario'),{
-    W1:JSON.stringify(W1),
-    W2:JSON.stringify(W2),
+    W1:arraysToMap(W1),
+    W2:arraysToMap(W2),
     month:currentMonth,
     year:currentYear,
     startDay:startDay
   });
+}
+
+// Salvataggio di UNA SOLA cella: usa updateDoc con dot-path così non
+// tocca le altre celle, anche se il nostro stato locale è "vecchio".
+async function saveCellRemote(wi,hi,di,val){
+  if(!window._firebaseReady)return;
+  const {doc,updateDoc}=window._fbFns;
+  const field=wi===0?'W1':'W2';
+  const key=`${hi}_${di}`;
+  try{
+    await updateDoc(doc(window._db,'schedule','orario'),{[`${field}.${key}`]:val});
+  }catch(e){
+    // Il documento potrebbe non esistere ancora: fallback a salvataggio completo
+    await saveSchedule();
+  }
 }
 
 function startScheduleSync(){
@@ -496,7 +554,8 @@ function startScheduleSync(){
   _scheduleUnsubscribe=onSnapshot(doc(window._db,'schedule','orario'),(docSnap)=>{
     if(docSnap.exists()){
       const d=docSnap.data();
-      try{W1=JSON.parse(d.W1);W2=JSON.parse(d.W2);}catch(e){}
+      W1=mapToArrays(d.W1);
+      W2=mapToArrays(d.W2);
       if(d.month!=null&&d.year!=null){
         currentMonth=d.month;
         currentYear=d.year;
@@ -505,6 +564,10 @@ function startScheduleSync(){
       updateHeaderPeriod();
       renderSchedule();
       renderWorkersGrid();
+    } else if(isAdmin()){
+      // Nessun documento su Firestore ancora: l'admin inizializza
+      // con i dati locali di default (solo la prima volta in assoluto).
+      saveSchedule();
     }
   });
 }
@@ -520,7 +583,7 @@ function setCellData(globalDayIdx,hi,val){
 
 // ── MONTH PICKER ─────────────────────────────────────────────
 function openMonthPicker(){
-  if(currentRole!=='admin')return;
+  if(!isAdmin())return;
   const selY=document.getElementById('pick-year');
   selY.innerHTML='';
   for(let y=currentYear-1;y<=currentYear+3;y++){
@@ -585,6 +648,7 @@ function closeMonthPicker(e){
 }
 
 async function applyMonth(){
+  if(!isAdmin())return;
   const m=parseInt(document.getElementById('pick-month').value);
   const y=parseInt(document.getElementById('pick-year').value);
   const startDay=parseInt(document.getElementById('pick-start').value);
@@ -630,10 +694,10 @@ function chipHTML(name,dayLabel){
 }
 
 function buildDesktopTable(weekDays,weekData,weekIdx){
-  const isAdmin=currentRole==='admin';
+  const admin=isAdmin();
   const w1s=weekDays[0].date;const w1e=weekDays[6].date;
   let html=`<div class="week-header">Settimana ${w1s} – ${w1e}</div>`;
-  if(isAdmin)html+=`<p class="edit-hint">✏️ Tocca una cella per modificarla</p>`;
+  if(admin)html+=`<p class="edit-hint">✏️ Tocca una cella per modificarla</p>`;
   html+=`<div class="schedule-wrap"><table class="schedule"><thead><tr><th>Ora</th>`;
   weekDays.forEach(d=>{html+=`<th><div class="dname">${d.label}</div><div class="ddate">${d.date}</div></th>`;});
   html+=`</tr></thead><tbody>`;
@@ -643,7 +707,7 @@ function buildDesktopTable(weekDays,weekData,weekIdx){
       const names=weekData[hi][di];
       const dayLabel=d.date+' '+d.label;
       const content=(names&&names.length)?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel)).join('')}</div>`:'';
-      if(isAdmin)html+=`<td class="editable" onclick="openCell('${weekIdx}-${hi}-${di}')">${content}</td>`;
+      if(admin)html+=`<td class="editable" onclick="openCell('${weekIdx}-${hi}-${di}')">${content}</td>`;
       else html+=`<td>${content}</td>`;
     });
     html+=`</tr>`;
@@ -656,7 +720,7 @@ let mobileWeekIdx=0;
 let mobileDayIdx=0;
 
 function renderMobile(){
-  const isAdmin=currentRole==='admin';
+  const admin=isAdmin();
   const globalDayIdx=mobileWeekIdx*7+mobileDayIdx;
   const day=ALL_DAYS[globalDayIdx];
   const weekDays=mobileWeekIdx===0?WEEK_DAYS:WEEK2_DAYS;
@@ -670,7 +734,7 @@ function renderMobile(){
     const names=getCellData(globalDayIdx,hi)||[];
     const content=names.length?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel)).join('')}</div>`:'';
     const editKey=`${mobileWeekIdx}-${hi}-${mobileDayIdx}`;
-    if(isAdmin)rows+=`<tr><td class="hour">${h}</td><td class="names editable" onclick="openCell('${editKey}')">${content}</td></tr>`;
+    if(admin)rows+=`<tr><td class="hour">${h}</td><td class="names editable" onclick="openCell('${editKey}')">${content}</td></tr>`;
     else rows+=`<tr><td class="hour">${h}</td><td class="names">${content}</td></tr>`;
   });
 
@@ -691,7 +755,7 @@ function renderMobile(){
       <button class="day-nav-btn" onclick="mobileNavDay(1)">›</button>
     </div>
     <div class="day-nav-dots">${dots}</div>
-    ${isAdmin?'<p class="edit-hint">✏️ Tocca una fascia oraria per modificarla</p>':''}
+    ${admin?'<p class="edit-hint">✏️ Tocca una fascia oraria per modificarla</p>':''}
     <table class="day-table">
       <thead><tr><th>Ora</th><th>Presenti</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -745,7 +809,7 @@ function renderSchedule(){
 let currentCell=null,editTags=[];
 
 function openCell(key){
-  if(currentRole!=='admin')return;
+  if(!isAdmin())return;
   const [wi,hi,di]=key.split('-').map(Number);
   currentCell={wi,hi,di};
   const gdi=wi*7+di;
@@ -787,11 +851,14 @@ function addTagFromInput(){
 async function saveCell(){
   if(!currentCell)return;
   const{wi,hi,di}=currentCell;
-  setCellData(wi*7+di,hi,[...editTags]);
+  const val=[...editTags];
+  setCellData(wi*7+di,hi,val);
   closePopup();
   renderSchedule();
   renderWorkersGrid();
-  await saveSchedule();
+  // Salva SOLO questa cella: non tocca il resto dell'orario,
+  // anche se il nostro stato locale di altre celle fosse vecchio.
+  await saveCellRemote(wi,hi,di,val);
 }
 function closePopup(e){
   if(e&&e.target!==document.getElementById('overlay'))return;
@@ -847,7 +914,7 @@ function getWorkerDays(wk){
 }
 
 function renderWorkerCard(worker){
-  const isAdmin=currentRole==='admin';
+  const canManage=canManageTasks();
   const isMyCard=currentRole==='worker'&&currentWorker===worker;
   const col=WORKER_COLORS[worker];
   const days=getWorkerDays(worker);
@@ -857,14 +924,14 @@ function renderWorkerCard(worker){
   const daysOptions=days.length?days.map(d=>`<option value="${d}">${d}</option>`).join(''):`<option>Nessun turno</option>`;
 
   function taskHTML(t){
-    const canCheck=isAdmin||isMyCard;
+    const canCheck=canManage||isMyCard;
     const chk=t.done?' checked':'';
     const dis=canCheck?'':' disabled style="opacity:.3"';
     return`<li class="task-item${t.done?' done':''}">
       <input type="checkbox"${chk}${dis} onchange="toggleTask('${worker}','${t.id}')">
       <span class="task-text">${t.text}</span>
       <span class="task-day-badge">${t.day.split(' ')[0]}</span>
-      ${isAdmin?`<button class="btn-del" onclick="deleteTask('${worker}','${t.id}')">×</button>`:''}
+      ${canManage?`<button class="btn-del" onclick="deleteTask('${worker}','${t.id}')">×</button>`:''}
     </li>`;
   }
 
@@ -880,7 +947,7 @@ function renderWorkerCard(worker){
     </div>`;
   }
 
-  const formHTML=isAdmin?`<div class="task-form">
+  const formHTML=canManage?`<div class="task-form">
     <select id="sel-${worker}">${daysOptions}</select>
     <input type="text" id="inp-${worker}" placeholder="Nuova task…" onkeydown="if(event.key==='Enter')doAddTask('${worker}')">
     <button class="btn-add" onclick="doAddTask('${worker}')">+</button>
