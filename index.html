@@ -554,6 +554,14 @@ function startScheduleSync(){
   _scheduleUnsubscribe=onSnapshot(doc(window._db,'schedule','orario'),(docSnap)=>{
     if(docSnap.exists()){
       const d=docSnap.data();
+      // Il documento esisteva già nel VECCHIO formato (W1/W2 salvati come
+      // stringa JSON dell'intero array). Se ora proviamo a salvare una
+      // singola cella con updateDoc su un percorso annidato tipo "W1.3_2",
+      // Firestore sostituisce l'INTERO campo W1 con una mappa che contiene
+      // solo quella cella, cancellando tutte le altre. Per evitarlo,
+      // appena rileviamo il vecchio formato lo migriamo subito al nuovo
+      // formato a mappa con un salvataggio completo (una tantum).
+      const needsMigration=(typeof d.W1==='string')||(typeof d.W2==='string');
       W1=mapToArrays(d.W1);
       W2=mapToArrays(d.W2);
       if(d.month!=null&&d.year!=null){
@@ -564,6 +572,9 @@ function startScheduleSync(){
       updateHeaderPeriod();
       renderSchedule();
       renderWorkersGrid();
+      if(needsMigration&&isAdmin()){
+        saveSchedule();
+      }
     } else if(isAdmin()){
       // Nessun documento su Firestore ancora: l'admin inizializza
       // con i dati locali di default (solo la prima volta in assoluto).
