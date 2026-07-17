@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBT0JsxTe0xL_mEVk-tXA_QcMKlPktu7FE",
@@ -25,7 +25,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 window._db = db;
-window._fbFns = { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp };
+window._fbFns = { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp, arrayUnion };
 window._firebaseReady = true;
 window.dispatchEvent(new Event('firebase-ready'));
 </script>
@@ -187,6 +187,21 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .task-item.done{opacity:.45;}
 .card-locked{opacity:.4;pointer-events:none;}
 
+/* ── COMUNICAZIONI ── */
+.comm-form{display:flex;flex-direction:column;gap:8px;margin-bottom:1.1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem;}
+.comm-form textarea{font-family:'Inter',sans-serif;font-size:.88rem;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);outline:none;resize:vertical;min-height:70px;}
+.comm-form textarea:focus{border-color:var(--accent);}
+.comm-form .btn-add{align-self:flex-end;}
+.comm-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;margin-bottom:.85rem;border-left:3px solid var(--accent);}
+.comm-card.comm-read{opacity:.65;border-left-color:var(--border);}
+.comm-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;gap:8px;}
+.comm-date{font-size:.7rem;color:var(--text3);}
+.comm-text{font-size:.9rem;line-height:1.55;margin-bottom:.8rem;white-space:pre-wrap;}
+.comm-readinfo{font-size:.68rem;color:var(--text3);margin-bottom:.65rem;line-height:1.6;}
+.btn-ok{padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:.82rem;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.comm-ack{font-size:.78rem;color:#2e7d32;font-weight:600;}
+.nav-dot{display:none;width:8px;height:8px;border-radius:50%;background:#ff3b30;margin-left:5px;vertical-align:middle;}
+
 /* ── RESPONSIVE SHOW/HIDE ── */
 .mobile-only{display:none;}
 .desktop-only{display:block;}
@@ -265,6 +280,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 <nav>
   <button class="active" onclick="showTab('orario',this)">📅 Orario</button>
   <button onclick="showTab('task',this)">✅ Task</button>
+  <button onclick="showTab('comunicazioni',this)">📢 Comunicazioni<span id="comm-badge" class="nav-dot"></span></button>
   <button id="btn-month" onclick="openMonthPicker()" style="display:none">📆 Mese</button>
 </nav>
 
@@ -309,7 +325,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
       <select id="pick-start" onchange="updateMonthPreview()"></select>
     </div>
     <div class="month-preview" id="month-preview"></div>
-    <div class="month-warn">⚠️ Applicare azzera l'orario delle due settimane.</div>
+    <div class="month-warn">ℹ️ Se il periodo scelto era già stato usato, ritroverai i dati salvati. Se è nuovo, partirà vuoto.</div>
     <div class="month-actions">
       <button class="btn-cancel" onclick="closeMonthPicker()">Annulla</button>
       <button class="btn-save" onclick="applyMonth()">Applica</button>
@@ -323,6 +339,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
     <div class="desktop-only" id="desktop-schedule"></div>
   </div>
   <div id="tab-task" style="display:none;"><div class="workers-grid" id="workers-root"></div></div>
+  <div id="tab-comunicazioni" style="display:none;"><div id="announcements-root"></div></div>
 </div>
 
 <script>
@@ -383,14 +400,18 @@ function enterApp(role,name){
   document.getElementById('user-badge').className='badge '+role;
   document.getElementById('btn-month').style.display=isAdmin()?'':'none';
   openToday();renderSchedule();
-  function startAllSync(){startScheduleSync();startTaskSync();}
+  function startAllSync(){startScheduleSync();startTaskSync();startCommSync();}
   if(window._firebaseReady){startAllSync();}
   else{window.addEventListener('firebase-ready',startAllSync,{once:true});}
 }
 function logout(){
   if(_unsubscribe){_unsubscribe();_unsubscribe=null;}
-  if(_scheduleUnsubscribe){_scheduleUnsubscribe();_scheduleUnsubscribe=null;}
+  if(_metaUnsubscribe){_metaUnsubscribe();_metaUnsubscribe=null;}
+  if(_periodUnsubscribe){_periodUnsubscribe();_periodUnsubscribe=null;}
+  _listeningPeriodKey=null;
+  if(_commUnsubscribe){_commUnsubscribe();_commUnsubscribe=null;}
   tasks={};
+  announcements=[];
   currentRole=null;currentWorker=null;pinBuffer='';
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('worker-select').value='';
@@ -486,7 +507,9 @@ function updateHeaderPeriod(){
     `${w1s} – ${w2e} · ${MONTH_NAMES[currentMonth]} ${currentYear}`;
 }
 
-let _scheduleUnsubscribe=null;
+let _metaUnsubscribe=null;
+let _periodUnsubscribe=null;
+let _listeningPeriodKey=null;
 
 // ── Conversione formato: array 2D (10x7) <-> mappa piatta "hi_di" ──
 // La mappa piatta permette di salvare su Firestore SOLO la cella
@@ -518,69 +541,135 @@ function mapToArrays(raw){
   return arr;
 }
 
-// Salvataggio COMPLETO: usato solo per l'inizializzazione del documento
-// e per "Applica periodo" (che azzera esplicitamente l'orario).
-async function saveSchedule(){
-  if(!window._firebaseReady)return;
-  const {doc,setDoc}=window._fbFns;
-  const startDay=WEEK_DAYS.length?WEEK_DAYS[0].fullDate.getDate():null;
-  await setDoc(doc(window._db,'schedule','orario'),{
-    W1:arraysToMap(W1),
-    W2:arraysToMap(W2),
-    month:currentMonth,
-    year:currentYear,
-    startDay:startDay
-  });
+// ── Ogni periodo di 2 settimane ha il SUO documento separato ──────
+// Identificato da anno/mese/giorno-di-inizio. Così cambiare periodo
+// non cancella mai i dati degli altri periodi: si passa semplicemente
+// a un documento diverso (vuoto se nuovo, con i dati già presenti se
+// il periodo era già stato usato in passato).
+function periodKey(month,year,startDay){
+  return `${year}_${String(month+1).padStart(2,'0')}_${String(startDay).padStart(2,'0')}`;
 }
 
-// Salvataggio di UNA SOLA cella: usa updateDoc con dot-path così non
-// tocca le altre celle, anche se il nostro stato locale è "vecchio".
+// Salvataggio COMPLETO del periodo attualmente visualizzato.
+// Usato solo come fallback quando il documento del periodo non esiste
+// ancora (prima modifica di un periodo nuovo) o in fase di migrazione.
+async function saveCurrentPeriodFull(){
+  if(!window._firebaseReady)return;
+  const startDay=WEEK_DAYS.length?WEEK_DAYS[0].fullDate.getDate():null;
+  if(!startDay)return;
+  const {doc,setDoc}=window._fbFns;
+  const key=periodKey(currentMonth,currentYear,startDay);
+  await setDoc(doc(window._db,'orari',key),{W1:arraysToMap(W1),W2:arraysToMap(W2)});
+}
+
+// Salvataggio di UNA SOLA cella nel periodo corrente: usa updateDoc
+// con dot-path così non tocca le altre celle né gli altri periodi.
 async function saveCellRemote(wi,hi,di,val){
   if(!window._firebaseReady)return;
+  const startDay=WEEK_DAYS.length?WEEK_DAYS[0].fullDate.getDate():null;
+  if(!startDay)return;
   const {doc,updateDoc}=window._fbFns;
+  const key=periodKey(currentMonth,currentYear,startDay);
   const field=wi===0?'W1':'W2';
-  const key=`${hi}_${di}`;
+  const cellKey=`${hi}_${di}`;
   try{
-    await updateDoc(doc(window._db,'schedule','orario'),{[`${field}.${key}`]:val});
+    await updateDoc(doc(window._db,'orari',key),{[`${field}.${cellKey}`]:val});
   }catch(e){
-    // Il documento potrebbe non esistere ancora: fallback a salvataggio completo
-    await saveSchedule();
+    // Il documento di questo periodo non esiste ancora: lo creiamo
+    // con tutto lo stato attuale (che include già la cella appena modificata).
+    await saveCurrentPeriodFull();
   }
 }
 
-function startScheduleSync(){
-  if(_scheduleUnsubscribe)_scheduleUnsubscribe();
+// Aggiorna il "periodo condiviso corrente": quando l'admin lo cambia,
+// TUTTI i dispositivi passano automaticamente a vedere quel periodo.
+async function setCurrentPeriodMeta(month,year,startDay){
+  if(!window._firebaseReady)return;
+  const {doc,setDoc}=window._fbFns;
+  await setDoc(doc(window._db,'meta','currentPeriod'),{month,year,startDay});
+}
+
+// Ascolta in tempo reale il documento del periodo attivo (orari/{key}).
+// Se il periodo cambia, si "sposta" l'ascolto sul nuovo documento senza
+// mai toccare o cancellare quello precedente.
+function startPeriodListener(key){
+  if(_listeningPeriodKey===key&&_periodUnsubscribe)return;
+  if(_periodUnsubscribe)_periodUnsubscribe();
+  _listeningPeriodKey=key;
   const {doc,onSnapshot}=window._fbFns;
-  _scheduleUnsubscribe=onSnapshot(doc(window._db,'schedule','orario'),(docSnap)=>{
-    if(docSnap.exists()){
-      const d=docSnap.data();
-      // Il documento esisteva già nel VECCHIO formato (W1/W2 salvati come
-      // stringa JSON dell'intero array). Se ora proviamo a salvare una
-      // singola cella con updateDoc su un percorso annidato tipo "W1.3_2",
-      // Firestore sostituisce l'INTERO campo W1 con una mappa che contiene
-      // solo quella cella, cancellando tutte le altre. Per evitarlo,
-      // appena rileviamo il vecchio formato lo migriamo subito al nuovo
-      // formato a mappa con un salvataggio completo (una tantum).
-      const needsMigration=(typeof d.W1==='string')||(typeof d.W2==='string');
+  _periodUnsubscribe=onSnapshot(doc(window._db,'orari',key),(snap)=>{
+    if(snap.exists()){
+      const d=snap.data();
       W1=mapToArrays(d.W1);
       W2=mapToArrays(d.W2);
-      if(d.month!=null&&d.year!=null){
+    }else{
+      // Periodo nuovo, mai usato prima: parte vuoto (non è un azzeramento,
+      // semplicemente non esiste ancora nulla per queste date).
+      W1=emptySchedule();
+      W2=emptySchedule();
+    }
+    renderSchedule();
+    renderWorkersGrid();
+  });
+}
+
+// Ascolta il "puntatore" al periodo condiviso corrente e, quando cambia,
+// ricalcola le settimane e passa ad ascoltare il documento giusto.
+function startMetaListener(){
+  if(_metaUnsubscribe)_metaUnsubscribe();
+  const {doc,onSnapshot}=window._fbFns;
+  _metaUnsubscribe=onSnapshot(doc(window._db,'meta','currentPeriod'),(snap)=>{
+    if(snap.exists()){
+      const d=snap.data();
+      if(d.month!=null&&d.year!=null&&d.startDay){
         currentMonth=d.month;
         currentYear=d.year;
-        buildWeeks(currentMonth,currentYear,d.startDay||null);
+        buildWeeks(currentMonth,currentYear,d.startDay);
+        updateHeaderPeriod();
+        startPeriodListener(periodKey(currentMonth,currentYear,d.startDay));
       }
-      updateHeaderPeriod();
-      renderSchedule();
-      renderWorkersGrid();
-      if(needsMigration&&isAdmin()){
-        saveSchedule();
-      }
-    } else if(isAdmin()){
-      // Nessun documento su Firestore ancora: l'admin inizializza
-      // con i dati locali di default (solo la prima volta in assoluto).
-      saveSchedule();
     }
   });
+}
+
+async function startScheduleSync(){
+  const {doc,getDoc}=window._fbFns;
+  let metaExists=false;
+  try{
+    const metaSnap=await getDoc(doc(window._db,'meta','currentPeriod'));
+    metaExists=metaSnap.exists();
+  }catch(e){metaExists=false;}
+
+  if(!metaExists&&isAdmin()){
+    // Prima volta con il nuovo sistema multi-periodo: migriamo i dati
+    // dal vecchio documento singolo "schedule/orario", se esiste, così
+    // non si perde l'orario attualmente in uso (es. luglio).
+    let m=currentMonth,y=currentYear;
+    let sd=WEEK_DAYS.length?WEEK_DAYS[0].fullDate.getDate():null;
+    let w1=W1,w2=W2;
+    try{
+      const oldSnap=await getDoc(doc(window._db,'schedule','orario'));
+      if(oldSnap.exists()){
+        const d=oldSnap.data();
+        if(d.month!=null)m=d.month;
+        if(d.year!=null)y=d.year;
+        if(d.startDay)sd=d.startDay;
+        w1=mapToArrays(d.W1);
+        w2=mapToArrays(d.W2);
+      }
+    }catch(e){}
+    if(!sd){
+      buildWeeks(m,y,null);
+      sd=WEEK_DAYS[0].fullDate.getDate();
+    }
+    currentMonth=m;currentYear=y;
+    buildWeeks(m,y,sd);
+    W1=w1;W2=w2;
+    const {setDoc}=window._fbFns;
+    await setDoc(doc(window._db,'orari',periodKey(m,y,sd)),{W1:arraysToMap(w1),W2:arraysToMap(w2)});
+    await setCurrentPeriodMeta(m,y,sd);
+  }
+  startMetaListener();
 }
 
 function getCellData(globalDayIdx,hi){
@@ -664,29 +753,13 @@ async function applyMonth(){
   const y=parseInt(document.getElementById('pick-year').value);
   const startDay=parseInt(document.getElementById('pick-start').value);
   if(!startDay)return;
-  currentMonth=m;currentYear=y;
-  // Costruisce le settimane dal giorno scelto
-  function makeWeek(start){
-    return DAY_LABELS.map((label,i)=>{
-      const d=new Date(start);
-      d.setDate(d.getDate()+i);
-      const dd=String(d.getDate()).padStart(2,'0');
-      const mm=String(d.getMonth()+1).padStart(2,'0');
-      return{date:`${dd}/${mm}`,label,fullDate:new Date(d)};
-    });
-  }
-  const w1start=new Date(y,m,startDay);
-  const w2start=new Date(y,m,startDay+7);
-  WEEK_DAYS=makeWeek(w1start);
-  WEEK2_DAYS=makeWeek(w2start);
-  ALL_DAYS=[...WEEK_DAYS,...WEEK2_DAYS];
-  W1=emptySchedule();
-  W2=emptySchedule();
   mobileWeekIdx=0;mobileDayIdx=0;
-  updateHeaderPeriod();
-  await saveSchedule();
-  renderSchedule();
-  renderWorkersGrid();
+  // Aggiorna solo il "periodo condiviso corrente": il listener in tempo
+  // reale (startMetaListener/startPeriodListener) si occupa di ricalcolare
+  // le settimane e caricare i dati giusti — quelli già presenti se questo
+  // periodo era già stato usato, altrimenti vuoto. Nessun altro periodo
+  // viene toccato o cancellato.
+  await setCurrentPeriodMeta(m,y,startDay);
   closeMonthPicker();
 }
 
@@ -992,9 +1065,101 @@ function renderWorkersGrid(){
   document.getElementById('workers-root').innerHTML=WORKERS.map(w=>renderWorkerCard(w)).join('');
 }
 
+// ── COMUNICAZIONI ─────────────────────────────────────────────
+let announcements=[];
+let _commUnsubscribe=null;
+
+function escapeHTML(s){
+  return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function startCommSync(){
+  if(_commUnsubscribe)_commUnsubscribe();
+  const {collection,onSnapshot}=window._fbFns;
+  _commUnsubscribe=onSnapshot(collection(window._db,'comunicazioni'),(snapshot)=>{
+    announcements=[];
+    snapshot.forEach(docSnap=>{
+      const d=docSnap.data();
+      announcements.push({id:docSnap.id,text:d.text||'',createdAt:d.createdAt,readBy:d.readBy||[]});
+    });
+    renderAnnouncements();
+  });
+}
+
+async function publishAnnouncement(){
+  if(!isAdmin())return;
+  const inp=document.getElementById('comm-input');
+  if(!inp)return;
+  const text=inp.value.trim();
+  if(!text)return;
+  const {collection,addDoc,serverTimestamp}=window._fbFns;
+  await addDoc(collection(window._db,'comunicazioni'),{text,createdAt:serverTimestamp(),readBy:[]});
+  inp.value='';
+}
+
+async function markRead(id){
+  if(!currentWorker)return;
+  const {doc,updateDoc,arrayUnion}=window._fbFns;
+  await updateDoc(doc(window._db,'comunicazioni',id),{readBy:arrayUnion(currentWorker.toUpperCase())});
+}
+
+async function deleteAnnouncement(id){
+  if(!isAdmin())return;
+  const {doc,deleteDoc}=window._fbFns;
+  await deleteDoc(doc(window._db,'comunicazioni',id));
+}
+
+function announcementHTML(a){
+  const wu=(currentWorker||'').toUpperCase();
+  const isRead=a.readBy.includes(wu);
+  const dateStr=(a.createdAt&&a.createdAt.toDate)?a.createdAt.toDate().toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'invio in corso…';
+  const delBtn=isAdmin()?`<button class="btn-del" onclick="deleteAnnouncement('${a.id}')">×</button>`:'';
+  let adminInfo='';
+  if(isAdmin()){
+    const readCount=a.readBy.length;
+    const readList=a.readBy.length?a.readBy.join(', '):'nessuno';
+    adminInfo=`<div class="comm-readinfo">👁️ Letta da ${readCount}/${WORKERS.length}: ${readList}</div>`;
+  }
+  const actionHTML=isRead?'<span class="comm-ack">✅ Letta</span>':`<button class="btn-ok" onclick="markRead('${a.id}')">OK, letta</button>`;
+  return`<div class="comm-card${isRead?' comm-read':''}">
+    <div class="comm-card-top">
+      <div class="comm-date">${dateStr}</div>
+      ${delBtn}
+    </div>
+    <div class="comm-text">${escapeHTML(a.text)}</div>
+    ${adminInfo}
+    ${actionHTML}
+  </div>`;
+}
+
+function updateCommBadge(list){
+  const wu=(currentWorker||'').toUpperCase();
+  const unread=list.filter(a=>!a.readBy.includes(wu)).length;
+  const el=document.getElementById('comm-badge');
+  if(el)el.style.display=unread>0?'inline-block':'none';
+}
+
+function renderAnnouncements(){
+  const root=document.getElementById('announcements-root');
+  if(!root)return;
+  const list=[...announcements].sort((a,b)=>{
+    const ta=(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0;
+    const tb=(b.createdAt&&b.createdAt.toMillis)?b.createdAt.toMillis():0;
+    return tb-ta;
+  });
+  const formHTML=isAdmin()?`<div class="comm-form">
+    <textarea id="comm-input" placeholder="Scrivi una nuova circolare…"></textarea>
+    <button class="btn-add" onclick="publishAnnouncement()">📢 Pubblica</button>
+  </div>`:'';
+  const listHTML=list.length?list.map(announcementHTML).join(''):'<div class="empty-tasks">Nessuna comunicazione al momento.</div>';
+  root.innerHTML=formHTML+listHTML;
+  updateCommBadge(list);
+}
+
 function showTab(tab,btn){
   document.getElementById('tab-orario').style.display=tab==='orario'?'':'none';
   document.getElementById('tab-task').style.display=tab==='task'?'':'none';
+  document.getElementById('tab-comunicazioni').style.display=tab==='comunicazioni'?'':'none';
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
