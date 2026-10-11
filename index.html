@@ -765,14 +765,18 @@ async function applyMonth(){
 
 // ── RENDER ─────────────────────────────────────────────────────
 function isBrand(s){return BRANDS.includes(s.toLowerCase());}
-function hasOpenTaskOnDay(name,dayLabel){
+// Un pallino sulla cella compare solo se c'è una task aperta per quel
+// giorno E per quella specifica fascia oraria. Se la task non ha un
+// orario impostato (campo "Tutto il giorno"), resta visibile su tutte
+// le fasce di quel giorno, come comportamento di riserva.
+function hasOpenTaskAtSlot(name,dayLabel,hourLabel){
   if(isBrand(name.toLowerCase()))return false;
   const wu=name.toUpperCase();
   const wtasks=tasks[wu]||[];
-  return wtasks.some(t=>!t.done&&t.day===dayLabel);
+  return wtasks.some(t=>!t.done&&t.day===dayLabel&&(!t.hour||t.hour===hourLabel));
 }
-function chipHTML(name,dayLabel){
-  const dot=dayLabel&&hasOpenTaskOnDay(name,dayLabel)?'<span class="chip-task-dot"></span>':'';
+function chipHTML(name,dayLabel,hourLabel){
+  const dot=dayLabel&&hasOpenTaskAtSlot(name,dayLabel,hourLabel)?'<span class="chip-task-dot"></span>':'';
   if(isBrand(name.toLowerCase()))return`<span class="chip brand">${name}${dot}</span>`;
   return`<span class="chip ${name.toLowerCase()}">${name.toUpperCase()}${dot}</span>`;
 }
@@ -790,7 +794,7 @@ function buildDesktopTable(weekDays,weekData,weekIdx){
     weekDays.forEach((d,di)=>{
       const names=weekData[hi][di];
       const dayLabel=d.date+' '+d.label;
-      const content=(names&&names.length)?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel)).join('')}</div>`:'';
+      const content=(names&&names.length)?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel,h)).join('')}</div>`:'';
       if(admin)html+=`<td class="editable" onclick="openCell('${weekIdx}-${hi}-${di}')">${content}</td>`;
       else html+=`<td>${content}</td>`;
     });
@@ -816,7 +820,7 @@ function renderMobile(){
   const dayLabel=day.date+' '+day.label;
   HOURS.forEach((h,hi)=>{
     const names=getCellData(globalDayIdx,hi)||[];
-    const content=names.length?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel)).join('')}</div>`:'';
+    const content=names.length?`<div class="cell-names">${names.map(n=>chipHTML(n,dayLabel,h)).join('')}</div>`:'';
     const editKey=`${mobileWeekIdx}-${hi}-${mobileDayIdx}`;
     if(admin)rows+=`<tr><td class="hour">${h}</td><td class="names editable" onclick="openCell('${editKey}')">${content}</td></tr>`;
     else rows+=`<tr><td class="hour">${h}</td><td class="names">${content}</td></tr>`;
@@ -963,14 +967,14 @@ function startTaskSync(){
     snapshot.forEach(docSnap=>{
       const d=docSnap.data();
       if(!tasks[d.worker])tasks[d.worker]=[];
-      tasks[d.worker].push({id:docSnap.id,day:d.day,text:d.text,done:d.done});
+      tasks[d.worker].push({id:docSnap.id,day:d.day,hour:d.hour||'',text:d.text,done:d.done});
     });
     renderWorkersGrid();
     renderSchedule();
   });
-}async function addTask(w,day,text){
+}async function addTask(w,day,hour,text){
   const {collection,addDoc,serverTimestamp}=window._fbFns;
-  await addDoc(collection(window._db,'tasks'),{worker:w,day,text,done:false,createdAt:serverTimestamp()});
+  await addDoc(collection(window._db,'tasks'),{worker:w,day,hour,text,done:false,createdAt:serverTimestamp()});
 }
 
 async function toggleTask(w,id){
@@ -1014,7 +1018,7 @@ function renderWorkerCard(worker){
     return`<li class="task-item${t.done?' done':''}">
       <input type="checkbox"${chk}${dis} onchange="toggleTask('${worker}','${t.id}')">
       <span class="task-text">${t.text}</span>
-      <span class="task-day-badge">${t.day.split(' ')[0]}</span>
+      <span class="task-day-badge">${t.day.split(' ')[0]}${t.hour?' · '+t.hour:''}</span>
       ${canManage?`<button class="btn-del" onclick="deleteTask('${worker}','${t.id}')">×</button>`:''}
     </li>`;
   }
@@ -1031,8 +1035,10 @@ function renderWorkerCard(worker){
     </div>`;
   }
 
+  const hourOptions=`<option value="">Tutto il giorno</option>`+HOURS.map(h=>`<option value="${h}">${h}</option>`).join('');
   const formHTML=canManage?`<div class="task-form">
     <select id="sel-${worker}">${daysOptions}</select>
+    <select id="selh-${worker}">${hourOptions}</select>
     <input type="text" id="inp-${worker}" placeholder="Nuova task…" onkeydown="if(event.key==='Enter')doAddTask('${worker}')">
     <button class="btn-add" onclick="doAddTask('${worker}')">+</button>
   </div>`:'';
@@ -1054,12 +1060,13 @@ function toggleArchive(w){
 }
 function renderCard(w){renderWorkersGrid();}
 async function doAddTask(w){
-  const sel=document.getElementById('sel-'+w),inp=document.getElementById('inp-'+w);
+  const sel=document.getElementById('sel-'+w),selh=document.getElementById('selh-'+w),inp=document.getElementById('inp-'+w);
   if(!inp||!sel)return;
   const text=inp.value.trim();
   if(!text||sel.value==='Nessun turno')return;
+  const hour=selh?selh.value:'';
   inp.value='';
-  await addTask(w,sel.value,text);
+  await addTask(w,sel.value,hour,text);
 }
 function renderWorkersGrid(){
   document.getElementById('workers-root').innerHTML=WORKERS.map(w=>renderWorkerCard(w)).join('');
