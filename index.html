@@ -101,7 +101,7 @@ table.schedule th:first-child{position:sticky;left:0;z-index:3;}
 .chip.diego{background:#f9a825;color:#1a1916;}
 .chip.brand{background:#ecebe8;color:#6b6660;font-style:italic;font-size:.6rem;border:1px solid #ddd;}
 .chip{position:relative;}
-.chip-task-dot{position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:#ff3b30;border:1.5px solid #fff;}
+.chip.chip-has-task{box-shadow:0 0 0 2px #ff3b30;outline:1px solid #fff;outline-offset:-1px;}
 
 /* ── MOBILE DAY VIEW ── */
 .day-nav{display:flex;align-items:center;gap:8px;margin-bottom:.75rem;}
@@ -776,9 +776,10 @@ function hasOpenTaskAtSlot(name,dayLabel,hourLabel){
   return wtasks.some(t=>!t.done&&t.day===dayLabel&&(!t.hour||t.hour===hourLabel));
 }
 function chipHTML(name,dayLabel,hourLabel){
-  const dot=dayLabel&&hasOpenTaskAtSlot(name,dayLabel,hourLabel)?'<span class="chip-task-dot"></span>':'';
-  if(isBrand(name.toLowerCase()))return`<span class="chip brand">${name}${dot}</span>`;
-  return`<span class="chip ${name.toLowerCase()}">${name.toUpperCase()}${dot}</span>`;
+  const hasTask=dayLabel&&hasOpenTaskAtSlot(name,dayLabel,hourLabel);
+  const taskClass=hasTask?' chip-has-task':'';
+  if(isBrand(name.toLowerCase()))return`<span class="chip brand${taskClass}">${name}</span>`;
+  return`<span class="chip ${name.toLowerCase()}${taskClass}">${name.toUpperCase()}</span>`;
 }
 
 function buildDesktopTable(weekDays,weekData,weekIdx){
